@@ -2,16 +2,27 @@
 
 ## Goal
 
-A fixed-wing VTOL drone (ArduPlane QuadPlane) that flies **autonomous missions**. It is commanded and monitored over a **cellular (4G/LTE)** link from a **password-protected web app in Chrome**.
+A fixed-wing VTOL drone (ArduPlane QuadPlane) that flies **autonomous missions only**. It is supervised over **4G/LTE** from a **password-protected web app**.
 
-The communication side is based on the **OpenIPC 4G / QuadroFleet** approach: an OpenIPC IP-camera SoC with a Quectel modem and a WireGuard VPN.
+- **No manual control is sent to the aircraft.** Only mission tasking and high-level commands go out.
+- **Live video downlink** is wanted, but latency isn't the top priority.
+- The app must work in **any modern browser on any device**: laptop, Android, iPad or iPhone.
 
-## The key constraint
+## Approach: WebRTC between the drone and the browser
 
-QuadroFleet's ground station is a **native app** (Windows, Linux or Android). It joins the WireGuard VPN and sends raw UDP. **Chrome can't do either.** The design therefore puts a **cloud relay server** between the drone and the browser:
+The browser's only native real-time peer-to-peer channel is **WebRTC**. So the drone runs a WebRTC agent, and the browser connects to it directly:
 
-- The drone talks to the server over WireGuard and UDP. This is the QuadroFleet-style path.
-- The browser talks to the server over HTTPS, WebSocket and WebRTC. These are browser-native.
+- **Video track:** hardware H.264 from the drone. Every browser decodes it natively. No server-side transcoding.
+- **Data channels:**
+  - `telemetry`: unordered, no retransmits (`maxRetransmits: 0`). A dropped packet never delays newer state.
+  - `control`: reliable and ordered. Carries mission upload, mode and high-level commands, and acknowledgements.
+- **Encryption:** DTLS-SRTP end to end, even when relayed through TURN.
+
+A small VPS still exists, but **media and MAVLink don't pass through application code there**. It provides:
+
+1. **Signalling and auth.** Password login, then it brokers the SDP and ICE exchange between the browser and the drone. The drone keeps a persistent outbound WSS connection to it.
+2. **STUN/TURN (coturn).** Cellular CGNAT often blocks a direct peer-to-peer path. TURN relays the encrypted packets when that happens. Order of preference: direct UDP, then TURN/UDP, then TURN/TLS as a last resort.
+3. **Web app hosting**, plus storage for missions and flight logs. The drone uploads logs after landing.
 
 ## Diagram
 
@@ -19,62 +30,86 @@ QuadroFleet's ground station is a **native app** (Windows, Linux or Android). It
 flowchart LR
   subgraph AIR["Air unit (on drone)"]
     FC["Flight controller<br/>ArduPlane QuadPlane"]
-    CAM["OpenIPC camera SoC<br/>SSC338Q / SSC30KQ<br/>- majestic (video)<br/>- MAVLink UART<->UDP bridge<br/>- WireGuard client"]
-    MODEM["Quectel EC25 / EP06<br/>4G modem (USB)"]
-    RC["Backup RC receiver<br/>(ELRS, local safety pilot)"]
-    FC <-- "UART: MAVLink2" --> CAM
-    CAM <-- USB --> MODEM
+    SBC["Companion: Radxa Zero 3W<br/>drone-agent (Go + Pion)<br/>- MAVLink UART<br/>- H.264 HW encode<br/>- WebRTC peer<br/>- command whitelist / safety gate"]
+    CAMS["Camera (MIPI CSI or USB)"]
+    MODEM["LTE modem (USB)<br/>Quectel EC25 / EG25-G"]
+    RC["ELRS RX<br/>(RC override, always available)"]
+    FC <-- "UART: MAVLink2" --> SBC
+    CAMS --> SBC
+    SBC <-- USB --> MODEM
     RC --> FC
   end
 
-  subgraph CLOUD["VPS (Linux, public IP)"]
-    WG["WireGuard server<br/>10.66.0.1"]
-    RELAY["Relay service (TypeScript/Node)<br/>MAVLink UDP <-> WebSocket<br/>command authorisation, logging"]
-    MTX["MediaMTX<br/>RTP/RTSP ingest -> WebRTC (WHEP)"]
-    WEBAPP["Web app + API<br/>auth, sessions, missions"]
-    DB[("SQLite/Postgres<br/>users, missions, flight logs")]
-    CADDY["Caddy (HTTPS, TLS)"]
-    WG --- RELAY
-    WG --- MTX
-    RELAY --- WEBAPP
-    WEBAPP --- DB
-    CADDY --- WEBAPP
-    CADDY --- MTX
+  subgraph VPS["VPS (public IP, near flying area)"]
+    SIG["Signalling + auth API<br/>(TypeScript/Node)"]
+    TURN["coturn<br/>STUN/TURN"]
+    WEB["Web app static files"]
+    DB[("SQLite<br/>users, missions, logs")]
+    CADDY["Caddy (HTTPS)"]
+    SIG --- DB
+    CADDY --- SIG
+    CADDY --- WEB
   end
 
-  subgraph USER["Operator"]
-    CHROME["Chrome<br/>React app: map, mission planner,<br/>telemetry, video, checklists"]
-  end
+  BROWSER["Any browser / device<br/>map, mission planner, telemetry,<br/>video, checklists"]
 
-  MODEM == "LTE -> Internet -> WireGuard (UDP)" ==> WG
-  CHROME == "HTTPS / WSS / WebRTC" ==> CADDY
+  SBC -. "WSS signalling (outbound)" .-> CADDY
+  BROWSER -. "HTTPS login + WSS signalling" .-> CADDY
+  SBC <== "WebRTC (direct P2P if possible)" ==> BROWSER
+  SBC <== "or via TURN relay" ==> TURN
+  TURN <==> BROWSER
 ```
 
-## Data paths
+## Session flow
 
-| Path | Transport | Notes |
-|---|---|---|
-| Telemetry (FC → browser) | FC UART MAVLink2 → camera bridge → UDP over WG → relay → WebSocket | Relay parses MAVLink and forwards only what the UI needs, rate-limited (for example 5–10 Hz for attitude and position). |
-| Commands (browser → FC) | WebSocket → relay (auth + validation) → UDP over WG → camera → UART | Only a **whitelist** of commands is allowed, including mission upload, mode changes and RTL/QLAND. Arm and takeoff need explicit confirmation. |
-| Mission upload | MAVLink mission protocol, driven by the **relay** (not the browser) | The relay handles retries and timeouts. The browser just submits a mission JSON. |
-| Video (camera → browser) | majestic RTP over WG → MediaMTX → WebRTC (WHEP) | **Prefer H.264** for universal Chrome decode. H.265 saves bandwidth, but WebRTC H.265 support in Chrome depends on hardware. Test it in Phase 2. |
-| Link health | Heartbeats both ways, plus relay RTT measurement | Shown in the UI. Feeds the go/no-go checks. |
+1. The drone boots, brings up LTE, and opens a WSS to the signalling server. It authenticates with a **per-drone key**.
+2. The operator logs in (argon2id password, plus TOTP later). They get a session cookie.
+3. The operator opens the drone page. The server mints a **short-lived signed session token** (Ed25519, carrying the user, role and expiry) and forwards it to the drone with the browser's SDP offer.
+4. The drone **verifies the token itself** before answering. It never accepts a peer the server didn't authorise.
+5. ICE finds the best path. The drone streams video and telemetry, and accepts commands on the `control` channel.
+6. One **commander** session is allowed at a time. Extra sessions are view-only and limited by the drone's uplink, so cap them at 2–3 viewers. Add an SFU later if more are needed.
 
-## Safety model (autonomous over cellular)
+## Command model (no manual control)
 
-- **The aircraft must be safe without the link.** ArduPilot does the flying. The link is only for supervision and tasking.
-- If the GCS link is lost, the **ArduPilot GCS failsafe** (`FS_GCS_ENABL`, `FS_LONG_ACTN`, `FS_LONG_TIMEOUT`) triggers. Typical action: continue the mission, or RTL into a QuadPlane VTOL landing (`Q_RTL_MODE`).
-- Geofence (`FENCE_*`) and minimum and maximum altitude are enforced **on the FC**, not just in the UI.
-- During development, a local ELRS safety pilot can always take over. It stays installed until BVLOS hardening is done.
-- QuadroFleet's "hover after 250 ms" CRSF failsafe is **not** used. It assumes manual stick control.
+The `control` channel accepts a fixed set of JSON messages. The **drone agent** turns them into MAVLink and enforces the rules. The server can't, because it's not in the data path.
 
-## Security model
+| Command | Notes |
+|---|---|
+| `mission.upload` | The agent runs the MAVLink mission protocol (with retries) and reads the mission back to verify it. |
+| `mission.start` | Requires pre-flight checks passed, the vehicle armed, and the mission verified. |
+| `arm` / `disarm` | Arm only on the ground, with the pre-flight checklist done. Disarm only when landed. |
+| `mode.pause` | Switch to LOITER/QLOITER |
+| `mode.resume` | Back to AUTO |
+| `mode.rtl` | RTL; QuadPlane VTOL landing via `Q_RTL_MODE` |
+| `mode.qland` | Land vertically now |
+| `video.config` | Bitrate and resolution presets |
 
-- Web app: HTTPS only, through Caddy. Passwords hashed with argon2id. HttpOnly, Secure, SameSite=strict session cookies. Login rate limiting. Optional TOTP 2FA (recommended before any real flight).
-- Relay: the WebSocket only accepts authenticated sessions. Every command is checked against a whitelist and logged with user and timestamp.
-- Network: the drone **only** reaches the VPS over WireGuard. Nothing on the drone is exposed to the public internet. MAVLink and RTP ports listen on the WG interface only.
-- MAVLink2 message signing between the relay and the FC, to be added in the hardening phase.
+No RC override, no `MANUAL_CONTROL`, no direct attitude or velocity setpoints. These are **blocked in the agent**. The agent also logs every command locally, with signed user identity, and uploads the logs later.
 
-## Why not run it on Vercel or serverless?
+## Safety model
 
-The relay needs a WireGuard endpoint, long-lived UDP sockets and persistent WebSockets. **Use a small VPS instead**, for example Hetzner or DigitalOcean, with 1–2 vCPU and Docker Compose. Pick a region close to where you'll fly.
+- **The aircraft must be safe with no link.** ArduPilot flies the mission. The link is for supervision only.
+- **GCS failsafe on the FC:** the agent sends heartbeats only while a browser session is active. Losing the browser or the LTE link triggers `FS_GCS_ENABL` → continue the mission, or RTL into a VTOL landing (configurable per mission).
+- Geofence (`FENCE_*`), altitude limits and the battery failsafe are all **on the FC**.
+- **RC override is always available** (ADR-0008). See the next section.
+
+## RC override (local radio)
+
+An ELRS receiver is wired directly to the FC, and it **always** has authority over the browser.
+
+- **Taking over:** ArduPilot changes mode when the RC mode switch *changes position*. The pilot flips the switch to FBWA, QHOVER or QLOITER (or RTL/QLAND), and that takes over at once, whatever the browser commanded. The browser then sees the mode change and the "RC override active" flag in telemetry.
+- **Handing back:** the pilot switches back to AUTO on the radio, or the browser sends `mode.resume` once the operator acknowledges it. The browser *cannot* leave a manual mode the pilot picked unless the pilot releases it. The agent refuses mode commands while the RC switch is in a manual position.
+- **RC failsafe must not abort autonomy.** Beyond radio range the RC link is normally lost. Set `FS_LONG_ACTN` and `THR_FAILSAFE` so that losing RC **in AUTO continues the mission**. GCS (cellular) loss is handled separately by `FS_GCS_ENABL`. Losing both links while not in AUTO → RTL with a VTOL landing.
+- **Pre-flight check:** the RC link is present and the mode switch is in the AUTO position before a mission starts from the browser. The agent checks this.
+- The RC link is not routed through the companion computer, so an agent, modem or VPS failure can't affect it.
+- MAVLink2 signing between the agent and the FC, to be added during hardening.
+
+## Video
+
+- Hardware H.264 on the Radxa (RK3566). Start at 720p30 and 1–2 Mbps, adaptive via WebRTC congestion feedback.
+- If the uplink is poor, drop resolution first, then frame rate. Telemetry always takes priority over video.
+- Option: record full quality onboard (to SD) and upload it after landing.
+
+## Why this over QuadroFleet / WireGuard
+
+QuadroFleet uses WireGuard and raw UDP into a native app. A browser can do neither, so we would need a server that **translates** video and MAVLink, which adds a hop and transcoding. WebRTC end to end is browser-native on every device, and it's encrypted and congestion-controlled. It also goes direct whenever the network allows. We borrow QuadroFleet's hardware lessons: the Quectel modem and power sizing.

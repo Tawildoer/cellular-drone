@@ -7,75 +7,87 @@ Guiding principle: **build software against the simulator first, then hardware o
 ---
 
 ## Phase 0: Requirements, regulations, budget
-- [ ] Confirm the country or countries of operation, and record the rules in `docs/OPEN_QUESTIONS.md`. Cover open/specific category, VLOS vs BVLOS, operator ID, remote ID, and whether a SIM may be used airborne under the carrier's terms.
-- [ ] Choose the airframe. Options: an off-the-shelf foam VTOL (for example a Heewing T2/T1 VTOL or a MakeFlyEasy-class VTOL) or a DIY QuadPlane conversion. Record the choice in `docs/DECISIONS.md`.
-- [ ] Choose the flight controller. See ADR-0002 for the SpeedyBee F405 WING vs H743 question.
-- [ ] Finalise `docs/BOM.md` and the budget.
-- [ ] Rent the VPS and pick a region near the flying area.
-- [ ] Get a data SIM. Check coverage and upload speed at the flying site, at altitude if possible, using a phone on a pole or a kite as a rough test.
+- [ ] Confirm the country or countries of operation, and record the rules in `docs/OPEN_QUESTIONS.md`. Cover VLOS vs BVLOS, operator ID, remote ID, and whether a SIM may be used airborne under the carrier's terms.
+- [ ] Choose the airframe: an off-the-shelf foam VTOL or a DIY QuadPlane conversion. Record it in `docs/DECISIONS.md`.
+- [ ] Choose the flight controller (ADR-0002).
+- [ ] Finalise `docs/BOM.md` and order parts.
+- [ ] Rent the VPS in a region near the flying area.
+- [ ] Get a data SIM and check LTE coverage and uplink at the site.
 
 **Exit:** BOM ordered, regulations understood, flying site chosen.
 
-## Phase 1: Software against SITL (no hardware needed). Start here in the CLI.
-- [ ] `sim/`: Docker setup for **ArduPlane SITL** with a QuadPlane frame (`-f quadplane`) that emits MAVLink on UDP.
-- [ ] `server/` relay (TypeScript, Node 24):
-  - [ ] MAVLink2 UDP endpoint (for example the `node-mavlink` lib), with a heartbeat and link-quality tracker
-  - [ ] WebSocket API: telemetry stream, command channel with a whitelist, mission upload and download state machine
-  - [ ] Structured flight log (tlog plus JSON events)
-- [ ] `server/` auth:
-  - [ ] Single-tenant user table with argon2id hashing and session cookies
-  - [ ] Login rate limiting
-  - [ ] Seed admin user from an env var
-- [ ] `web/` (React + Vite + TypeScript, MapLibre GL or Leaflet):
-  - [ ] Login page
-  - [ ] Live map with aircraft position, heading, home and trail
-  - [ ] Telemetry HUD: mode, armed state, battery, airspeed, altitude, GPS, link RTT
-  - [ ] Mission planner: VTOL takeoff → waypoints → VTOL land; altitude per waypoint; save and load missions
-  - [ ] Pre-flight checklist gate before Arm and Start mission
-  - [ ] Commands: Arm, Auto, RTL, QLAND, Pause (loiter). Each one asks for confirmation.
-- [ ] `server/docker-compose.yml`: relay, web, Caddy, MediaMTX (video placeholder: a test pattern stream)
-- [ ] Test the end-to-end loop in SITL: log in → plan → upload → fly → RTL → land.
+## Phase 1: Software against SITL (no hardware). Start here in the CLI.
+Build everything so the **drone agent runs on a laptop against SITL**. It becomes the real air unit in Phase 2.
 
-**Exit:** a full autonomous VTOL mission flown in SITL from Chrome, through the deployed VPS stack.
+- [ ] `sim/`: ArduPlane SITL in Docker with a QuadPlane frame. MAVLink exposed over TCP/UDP.
+- [ ] `agent/` (Go, Pion WebRTC):
+  - [ ] MAVLink2 connection (serial or UDP) with a heartbeat and a vehicle-state model
+  - [ ] WSS client to signalling with a per-drone key. Auto-reconnect.
+  - [ ] Verify the Ed25519 session token before answering an offer
+  - [ ] Data channels: `telemetry` (unreliable) and `control` (reliable)
+  - [ ] Command whitelist and safety gate (see ARCHITECTURE.md). Mission upload, download and verify state machine.
+  - [ ] GCS heartbeat only while a commander session is alive (this drives the FC failsafe)
+  - [ ] RC-override awareness: report RC link and mode-switch state; refuse browser mode changes while RC holds a manual mode
+  - [ ] Video track: test pattern / file source in SITL mode (via a GStreamer pipeline or Pion's sample writer)
+  - [ ] Local command and flight log (JSONL)
+- [ ] `server/` (TypeScript, Node 24, Fastify):
+  - [ ] Auth: argon2id, session cookies, rate limiting, admin seeded from env
+  - [ ] Drone registry (per-drone keys) and session-token minting (Ed25519)
+  - [ ] Signalling WebSocket relay between the browser and the drone
+  - [ ] Missions CRUD and log upload endpoint
+  - [ ] `docker-compose.yml`: server, Caddy, coturn (with time-limited TURN credentials)
+- [ ] `web/` (React + Vite + TS, MapLibre, responsive and mobile-first):
+  - [ ] Login
+  - [ ] Drone page: WebRTC connect with a status badge (direct vs relayed, RTT, bitrate)
+  - [ ] Live map: aircraft, heading, trail, home, mission and geofence overlay
+  - [ ] HUD: mode, armed state, battery, airspeed, altitude, GPS, link quality, RC link / RC override banner
+  - [ ] Video panel
+  - [ ] Mission planner: VTOL takeoff → waypoints → VTOL land. Save and load missions.
+  - [ ] Pre-flight checklist gate. Commands: arm, start, pause, resume, RTL, QLAND, each with confirmation.
+- [ ] Test end to end in SITL: log in from a phone on mobile data → plan → upload → arm → fly → pause/resume → RTL → land.
+- [ ] Test forced-TURN mode (`iceTransportPolicy: "relay"`), and kill the agent mid-flight to check the SITL failsafe.
 
-## Phase 2: Air unit on the bench (OpenIPC 4G)
-- [ ] Get an SSC338Q (preferred) or SSC30KQ OpenIPC camera board and a Quectel EC25 or EP06 modem.
-- [ ] Build or flash OpenIPC firmware with modem plus WireGuard support. Use the QuadroFleet firmware guide and `beep-systems/quadrofleet-masina` as a reference.
-- [ ] Bring up the modem: APN, auto-reconnect watchdog, and signal logging (RSSI, RSRP, SINR) sent back as a custom telemetry stream.
-- [ ] WireGuard client → VPS. Check that keepalive copes with CGNAT.
-- [ ] **MAVLink bridge** on the camera: UART ↔ UDP over WG. Evaluate OpenIPC `mavfwd` or a small custom C bridge. This replaces QuadroFleet's CRSF path.
-- [ ] Video: majestic → RTP → MediaMTX → WebRTC in Chrome. Measure glass-to-glass latency and bitrate for H.264 vs H.265. Pick one (ADR).
-- [ ] Power: a 5 V BEC sized for modem TX peaks (about 2 A), with a capacitor near the modem.
+**Exit:** a full autonomous VTOL mission in SITL, run from a phone browser and a laptop browser, through the deployed VPS, with both direct and relayed paths tested.
 
-**Exit:** on the bench, a USB-powered FC with ArduPlane shows live telemetry and video in Chrome over LTE.
+## Phase 2: Air unit on the bench
+- [ ] Radxa Zero 3W: flash a minimal Debian/Armbian. Cross-compile the agent (`GOARCH=arm64`). Run it as a systemd service.
+- [ ] Bring up the LTE modem: ModemManager/NetworkManager, APN, reconnect watchdog. Report signal metrics (RSRP, SINR, band) as telemetry.
+- [ ] Camera: MIPI CSI or USB. Hardware H.264 through the RK MPP encoder (GStreamer `mpph264enc`) into Pion. Measure latency, bitrate and CPU.
+- [ ] UART to the FC (MAVLink2, 921600 baud). `SERIALx_PROTOCOL=2`.
+- [ ] Power: a 5 V 3 A BEC, plus a capacitor near the modem for TX peaks. Measure total draw.
+- [ ] Measure how often LTE CGNAT forces TURN vs direct. Record it in `docs/DECISIONS.md`.
 
-## Phase 3: Airframe build and conventional tuning (local RC only)
-- [ ] Build the airframe. Install the FC, GPS/compass, airspeed sensor, ELRS receiver and the air unit. Keep the modem antenna away from GPS.
-- [ ] Do the ArduPilot QuadPlane setup: frame class/type, motor order, `Q_ENABLE`, servo outputs, calibrations.
-- [ ] Do manual and assisted flights over **local RC**: QHOVER/QLOITER tuning, then FBWA, then transitions, then AUTOTUNE.
-- [ ] Confirm the air unit doesn't interfere (RF noise on GPS, power sag).
+**Exit:** on the bench, the FC (USB-powered, ArduPlane) shows live video and telemetry in a phone browser over LTE.
 
-**Exit:** reliable VTOL takeoff, transition and landing under RC, with a tuned aircraft.
+## Phase 3: Airframe build and tuning (local RC only)
+- [ ] Build: FC, GPS/compass, airspeed sensor, ELRS RC override, air unit. Keep the LTE antennas away from GPS.
+- [ ] ArduPilot QuadPlane setup and calibrations
+- [ ] QHOVER/QLOITER tuning → FBWA → transitions → AUTOTUNE, under RC
+- [ ] Check for interference from the air unit (GPS noise, power sag)
 
-## Phase 4: Cellular supervision, VLOS with a safety pilot
-- [ ] Set the failsafes: `FS_GCS_ENABL`, long and short timeouts and actions, `Q_RTL_MODE`, geofence, battery failsafe.
-- [ ] Ground test: pull the modem mid-mission (in SITL first, then on the bench) and check the behaviour.
-- [ ] Flights: start an AUTO mission from Chrome, with the RC pilot ready to take over. Start with short, low missions.
-- [ ] Record link stats along the flight path, such as latency and signal against altitude. Build a coverage picture.
+**Exit:** reliable VTOL takeoff, transition and landing under RC.
 
-**Exit:** 10+ successful VLOS autonomous missions started and monitored from Chrome. Link loss tested in flight.
+## Phase 4: Autonomous missions from the browser, VLOS with a safety pilot
+- [ ] Set the failsafes: `FS_GCS_ENABL`, `FS_LONG_ACTN`, `Q_RTL_MODE`, geofence, battery
+- [ ] Bench test: pull the modem mid-mission and check the response
+- [ ] Configure and test the RC override (ADR-0008): mode-switch takeover mid-mission, hand back to AUTO, and RC loss in AUTO continues the mission
+- [ ] Short, low missions started from the browser, with the RC pilot ready to take over
+- [ ] Log link quality along the flight path (RTT, signal, direct vs relay)
+
+**Exit:** 10+ successful VLOS autonomous missions run from the browser. Link loss tested in flight.
 
 ## Phase 5: Hardening
-- [ ] Turn on MAVLink2 signing between the relay and the FC.
-- [ ] Add TOTP 2FA, audit log UI and roles (viewer vs pilot).
-- [ ] Add a second connectivity path (dual SIM on different carriers, or ELRS kept as a parallel link).
-- [ ] Add a flight log archive with replay in the web app.
-- [ ] Add monitoring and alerts for the VPS, plus an auto-restart and recovery plan.
-- [ ] Prepare the BVLOS operational case, if you pursue it (ops manual, risk assessment such as SORA in the EU/UK).
+- [ ] MAVLink2 signing (agent ↔ FC)
+- [ ] TOTP 2FA. Roles: viewer vs commander. Audit log UI.
+- [ ] Second cellular link: dual-SIM / dual-modem on different carriers
+- [ ] Flight log archive and replay. Upload onboard HD recordings.
+- [ ] VPS monitoring and alerts
+- [ ] Optional: port the agent to an OpenIPC SoC (SSC338Q) to save weight and power (ADR-0006)
+- [ ] BVLOS operational case, if you pursue it
 
-**Exit:** production-ready system that meets your local regulatory requirements.
+**Exit:** a production-ready system that meets your local regulatory requirements.
 
 ---
 
 ## Suggested first CLI session
-> "Read CLAUDE.md and docs/PLAN.md. Start Phase 1: set up `sim/` with ArduPlane QuadPlane SITL in Docker, then scaffold `server/` (relay + auth) and `web/`."
+> "Read CLAUDE.md and docs/PLAN.md. Start Phase 1: set up `sim/` with ArduPlane QuadPlane SITL in Docker, then scaffold `agent/`, `server/` and `web/`."

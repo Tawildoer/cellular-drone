@@ -2,27 +2,37 @@
 
 Short ADR-style entries. Add new ones at the bottom. Supersede old entries instead of editing them.
 
-## ADR-0001: Autonomous-first, ArduPilot + MAVLink (2026-10-02, accepted)
-**Context:** The cellular link has variable latency of 50–500+ ms, plus dropouts. QuadroFleet targets manual FPV with CRSF.
-**Decision:** The aircraft flies **autonomous missions only** on ArduPlane (QuadPlane VTOL). The link is used for supervision and tasking, and carries MAVLink2. QuadroFleet's CRSF control path is not used. We reuse its OpenIPC + modem + WireGuard + video approach.
-**Consequences:** We need a MAVLink UART↔UDP bridge on the camera SoC. Safety depends on on-board failsafes, not on the link.
+## ADR-0001: Autonomous only, ArduPilot + MAVLink (2026-10-02, accepted; amended same day)
+**Decision:** The aircraft flies **autonomous missions only** on ArduPlane (QuadPlane VTOL). **No manual control is sent to it**: no RC override, no stick or gamepad input. The browser sends only mission tasking and high-level commands (arm, start, pause, RTL, QLAND). A live video downlink is wanted, but latency isn't the top priority.
+**Consequences:** Safety depends on on-board failsafes, not the link.
 
 ## ADR-0002: Flight controller (2026-10-02, open)
-SpeedyBee F405 WING is cheap, and you already have bootloader files for it. However, ArduPilot on 1 MB-flash F4 boards drops some features (scripting, some advanced functions).
-**Leaning:** prototype on the F405 WING if you already own one. For the real aircraft, plan an H743-class wing FC (for example Matek H743-WING). Confirm by checking the ArduPilot feature list for the chosen board.
+SpeedyBee F405 WING is cheap, and you already have bootloader files for it. However, ArduPilot on 1 MB-flash F4 boards drops some features (for example Lua scripting).
+**Leaning:** prototype on the F405 WING if you already own one. For the real aircraft, use an H743-class wing FC (for example Matek H743-WING). Confirm against the ArduPilot feature list for the board.
 
-## ADR-0003: Browser access through a cloud relay (2026-10-02, accepted)
-**Context:** Chrome can't join WireGuard or open raw UDP sockets.
-**Decision:** A VPS runs a WireGuard server, a relay (MAVLink↔WebSocket), MediaMTX (RTP→WebRTC) and the web app behind Caddy (HTTPS).
-**Consequences:** The VPS is a single point of failure, which the on-board failsafes mitigate. Not hosted on serverless platforms.
+## ADR-0003: Browser access through a cloud relay with WireGuard (2026-10-02, SUPERSEDED by ADR-0005)
 
-## ADR-0004: Tech stack (2026-10-02, proposed)
-- Relay and API: TypeScript on Node 24. Fastify plus `ws`. `node-mavlink` for MAVLink2.
-- Web: React + Vite + TypeScript, MapLibre GL, TanStack Query.
-- DB: SQLite (via Drizzle) to start; Postgres later if multi-user.
-- Video: MediaMTX (WHEP to the browser).
-- Deploy: Docker Compose on the VPS. Caddy for TLS.
+## ADR-0004: Tech stack (2026-10-02, accepted)
+- Drone agent: **Go + Pion WebRTC** (single static binary, cross-compiles to arm64/armv7), gomavlib for MAVLink2, GStreamer (RK MPP) for H.264 on the Radxa.
+- Signalling and API: TypeScript on Node 24, Fastify + `ws`, SQLite via Drizzle.
+- Web: React + Vite + TypeScript, MapLibre GL. Responsive, works on mobile Safari and Chrome.
+- TURN: coturn with time-limited (REST API) credentials.
+- Deploy: Docker Compose on a VPS behind Caddy.
 - Sim: ArduPilot SITL (ArduPlane, `-f quadplane`) in Docker.
 
-## ADR-0005: Video codec (open, decide in Phase 2)
-H.264 decodes in every Chrome. H.265 halves the bitrate but WebRTC H.265 depends on the hardware. Measure both.
+## ADR-0005: WebRTC between drone and browser, TURN fallback (2026-10-02, accepted)
+**Context:** We want lower latency, peer-to-peer where possible, and a browser app that works on any device. QuadroFleet (WireGuard + raw UDP + native app) needs a translating server for browsers.
+**Decision:** The drone runs a WebRTC peer. Video is a media track (H.264). Telemetry uses an unreliable data channel; commands use a reliable one. The VPS does auth, signalling and STUN/TURN only. The drone checks a server-signed session token before accepting a peer. The command whitelist is enforced **on the drone**.
+**Consequences:** Cellular CGNAT will often force TURN, which costs a small latency hit from a nearby VPS. Each viewer uses drone uplink, so cap viewers (SFU later if needed). QuadroFleet is no longer a dependency; we keep only its hardware references.
+
+## ADR-0006: Air unit = Radxa Zero 3W companion (2026-10-02, accepted)
+**Context:** WebRTC on an OpenIPC SigmaStar SoC would mean porting a WebRTC stack into buildroot, and Majestic's WebRTC support on SigmaStar is unclear. A Linux SBC runs Pion and GStreamer as-is.
+**Decision:** Prototype on a **Radxa Zero 3W** (RK3566, hardware H.264/H.265 encode, ~10 g) with a USB LTE modem and a MIPI or USB camera. Keep the agent portable Go so an OpenIPC port stays possible.
+**Alternatives:** Pi Zero 2W (weaker CPU, H.264 only). Pi 4/CM4 (heavier). OpenIPC SSC338Q (lightest, but more embedded work). Revisit in Phase 5.
+
+## ADR-0007: Video codec (2026-10-02, accepted provisionally)
+**Decision:** H.264. It's universal across browsers on all devices. Revisit H.265 only if uplink bandwidth turns out to be the bottleneck.
+
+## ADR-0008: Permanent local RC override (2026-10-02, accepted)
+**Decision:** An ELRS receiver wired directly to the FC is a **permanent** part of the system, not a development-only tool. The RC pilot can take control at any time by changing the mode switch, and RC always has authority over browser commands. Losing RC range during AUTO **continues the mission**. Cellular loss is handled by the GCS failsafe. The agent reports RC state and refuses browser mode changes while RC holds a manual mode.
+**Consequences:** "No manual control" (ADR-0001) applies only to the cellular/browser path. The ArduPilot RC and GCS failsafe parameters must be designed together and tested in SITL (an RC-loss simulation) before flight.

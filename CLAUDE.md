@@ -1,26 +1,28 @@
 # Cellular VTOL drone: project context
 
-A fixed-wing **VTOL (ArduPlane QuadPlane)** that flies **autonomous missions**. It is supervised over **4G/LTE** from a **password-protected Chrome web app**. The comms approach is based on OpenIPC 4G / QuadroFleet (https://openfpv.com.ua/en/software/openipc-4g, https://github.com/beep-systems/quadrofleet-masina).
+A fixed-wing **VTOL (ArduPlane QuadPlane)** that flies **autonomous missions only**. It is supervised over **4G/LTE** from a **password-protected browser app** that works on any device. Live video goes down. **No manual control goes up.**
 
 ## Read first
 - `docs/PLAN.md`: phased plan and current status. **Update the checkboxes as work completes.**
-- `docs/ARCHITECTURE.md`: system design, data paths, safety and security model
+- `docs/ARCHITECTURE.md`: system design, session flow, command model, safety
 - `docs/DECISIONS.md`: ADRs. Add new decisions here; don't silently change direction.
 - `docs/OPEN_QUESTIONS.md`, `docs/BOM.md`
 
 ## Key facts
-- FC firmware: **ArduPilot (ArduPlane, QuadPlane)**. Link protocol: **MAVLink2**. We do **not** use QuadroFleet's CRSF manual-control path.
-- Air unit: OpenIPC camera SoC (SSC338Q/SSC30KQ) + Quectel EC25/EP06 + WireGuard client + MAVLink UART↔UDP bridge.
-- Chrome can't do WireGuard or raw UDP, so a **VPS relay** (WireGuard server + MAVLink↔WebSocket relay + MediaMTX WebRTC + web app behind Caddy) sits in between. Don't target serverless hosting.
-- Safety: the aircraft must be safe with no link. Failsafes, geofence and RTL/QLAND live on the FC. A local ELRS safety pilot stays in place until hardening.
+- Transport: **WebRTC between the drone agent and the browser**. Peer-to-peer when possible, coturn TURN fallback (cellular CGNAT). Video track is H.264. Data channels: `telemetry` (unreliable) and `control` (reliable).
+- VPS = auth + signalling + STUN/TURN + web hosting + mission and log storage. It does **not** proxy MAVLink or video in application code.
+- Air unit: **Radxa Zero 3W** running `agent/` (Go + Pion), USB LTE modem (Quectel), MIPI or USB camera, UART MAVLink2 to the FC.
+- FC: ArduPilot ArduPlane QuadPlane. Failsafes, geofence and RTL/QLAND live on the FC. A **local ELRS radio can always override** (permanent feature, ADR-0008): flipping the RC mode switch takes control at any point, and losing RC range must NOT abort an autonomous mission.
+- The **drone agent enforces the command whitelist** and verifies the server-signed (Ed25519) session tokens. Never add RC override, MANUAL_CONTROL or attitude/velocity setpoint passthrough.
+- QuadroFleet / OpenIPC 4G was the original inspiration and is no longer a dependency (ADR-0005). An OpenIPC port of the agent is a possible later optimisation.
 
 ## Repo layout
 - `sim/`: ArduPlane SITL (Docker)
-- `server/`: relay + API + auth (TypeScript/Node 24), docker-compose, Caddy, MediaMTX config
-- `web/`: React + Vite + TS frontend (MapLibre)
-- `air/`: OpenIPC overlay: WireGuard templates, modem scripts, MAVLink bridge config/source
+- `agent/`: drone agent (Go). Runs on a laptop against SITL, or on the Radxa.
+- `server/`: auth + signalling + API (TypeScript/Node 24), docker-compose, Caddy, coturn
+- `web/`: React + Vite + TS frontend (MapLibre), mobile-first
 
 ## Conventions
 - Develop and test everything against SITL before hardware.
-- The relay enforces a command whitelist. Arm, takeoff and mode changes need explicit UI confirmation and are audit-logged.
-- Never commit secrets (WG keys, passwords, SIM APN creds). Use `.env` (gitignored) plus `.env.example`.
+- Arm, start and mode changes need explicit UI confirmation and are audit-logged on the drone.
+- Never commit secrets (drone keys, signing keys, TURN secret, passwords, APN creds). Use `.env` (gitignored) plus `.env.example`.
