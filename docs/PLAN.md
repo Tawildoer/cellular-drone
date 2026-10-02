@@ -8,7 +8,7 @@ Guiding principle: **build software against the simulator first, then hardware o
 
 ## Phase 0: Requirements, regulations, budget
 - [ ] Confirm the country or countries of operation, and record the rules in `docs/OPEN_QUESTIONS.md`. Cover open/specific category, VLOS vs BVLOS, operator ID, remote ID, and whether a SIM may be used airborne under the carrier's terms.
-- [ ] Choose the airframe. Options: an off-the-shelf foam VTOL (for example a Heewing T2/T1 VTOL or a MakeFlyEasy-class VTOL) or a DIY QuadPlane conversion. Record the choice in `docs/decisions/`.
+- [ ] Choose the airframe. Options: an off-the-shelf foam VTOL (for example a Heewing T2/T1 VTOL or a MakeFlyEasy-class VTOL) or a DIY QuadPlane conversion. Record the choice in `docs/DECISIONS.md`.
 - [ ] Choose the flight controller. See ADR-0002 for the SpeedyBee F405 WING vs H743 question.
 - [ ] Finalise `docs/BOM.md` and the budget.
 - [ ] Rent the VPS and pick a region near the flying area.
