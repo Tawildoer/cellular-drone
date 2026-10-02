@@ -6,6 +6,7 @@ A fixed-wing **VTOL (ArduPlane QuadPlane)** that flies **autonomous missions onl
 - `docs/PLAN.md`: phased plan and current status. **Update the checkboxes as work completes.**
 - `docs/ARCHITECTURE.md`: system design, session flow, command model, safety
 - `docs/DECISIONS.md`: ADRs. Add new decisions here; don't silently change direction.
+- `docs/FRONTEND.md`: **frontend contract and layering. Required reading before touching `web/`.**
 - `docs/OPEN_QUESTIONS.md`, `docs/BOM.md`
 
 ## Key facts
@@ -23,6 +24,8 @@ A fixed-wing **VTOL (ArduPlane QuadPlane)** that flies **autonomous missions onl
 - `web/`: React + Vite + TS frontend (MapLibre), mobile-first
 
 ## Conventions
+- **Frontend is built first against `MockLink` (ADR-0009).** UI code (`features/`, `state/`) depends only on `domain/` types and the `VehicleLink` / `AuthClient` / `MissionRepository` interfaces. It never imports a concrete link, WebRTC, MAVLink or server details. Only `app/` wires up implementations. Every link implementation must pass the shared contract tests.
+- `protocol/` (zod, versioned envelope) is the single wire contract between the web app, the server and the agent. Change it deliberately and bump `v` on breaking changes.
 - Develop and test everything against SITL before hardware.
 - Arm, start and mode changes need explicit UI confirmation and are audit-logged on the drone.
 - Never commit secrets (drone keys, signing keys, TURN secret, passwords, APN creds). Use `.env` (gitignored) plus `.env.example`.

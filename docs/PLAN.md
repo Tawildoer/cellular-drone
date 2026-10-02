@@ -16,38 +16,51 @@ Guiding principle: **build software against the simulator first, then hardware o
 
 **Exit:** BOM ordered, regulations understood, flying site chosen.
 
-## Phase 1: Software against SITL (no hardware). Start here in the CLI.
-Build everything so the **drone agent runs on a laptop against SITL**. It becomes the real air unit in Phase 2.
+## Phase 1: Software (no hardware). Start here in the CLI.
+Order: **frontend first against a mock vehicle**, then the real backend underneath it. See `docs/FRONTEND.md` for the contract that keeps UI work safe from backend changes (ADR-0009).
 
+### 1a: Frontend against MockLink  ← START HERE
+- [ ] Scaffold `web/`: Vite + React + TS (strict), Tailwind + shadcn/ui, Zustand, zod, MapLibre, Vitest, Playwright, ESLint import-boundary rule
+- [ ] `domain/` types + pure helpers (mission validation, preflight checklist), with unit tests
+- [ ] `protocol/` zod message schemas (v1 envelope), with round-trip tests
+- [ ] `link/VehicleLink` interface + **contract test suite**
+- [ ] `MockLink`: simulated VTOL flying missions, canvas test-pattern video, fault injection (latency, loss, link drop, RC override, low battery, failsafe). Passes the contract tests.
+- [ ] `services/`: `AuthClient` (mock) + `MissionRepository` (localStorage)
+- [ ] UI: login → vehicle list → flight screen (map, HUD, video, link badge, RC override banner, event log)
+- [ ] UI: mission planner (tap to add, VTOL takeoff/land items, inline validation, save and load)
+- [ ] UI: preflight checklist gate + command bar with hold/slide-to-confirm
+- [ ] Dev panel for MockLink fault injection
+- [ ] Playwright smoke: login → plan → upload → arm → start → pause/resume → RTL
+- [ ] Check it on Chrome desktop, Chrome Android and iOS Safari (phone layout)
+
+**Exit 1a:** the whole operator workflow is usable end to end against MockLink on phone and laptop.
+
+### 1b: SITL + drone agent
 - [ ] `sim/`: ArduPlane SITL in Docker with a QuadPlane frame. MAVLink exposed over TCP/UDP.
 - [ ] `agent/` (Go, Pion WebRTC):
-  - [ ] MAVLink2 connection (serial or UDP) with a heartbeat and a vehicle-state model
-  - [ ] WSS client to signalling with a per-drone key. Auto-reconnect.
-  - [ ] Verify the Ed25519 session token before answering an offer
-  - [ ] Data channels: `telemetry` (unreliable) and `control` (reliable)
-  - [ ] Command whitelist and safety gate (see ARCHITECTURE.md). Mission upload, download and verify state machine.
+  - [ ] MAVLink2 connection (serial or UDP) → map into `protocol/` messages (`VehicleState`, events). Mode mapping → app `FlightMode`.
+  - [ ] Data channels: `telemetry` (unreliable) and `control` (reliable), carrying the **same `protocol/` v1 messages** as MockLink
+  - [ ] Command whitelist and safety gate. Mission upload, download and verify state machine.
   - [ ] GCS heartbeat only while a commander session is alive (this drives the FC failsafe)
   - [ ] RC-override awareness: report RC link and mode-switch state; refuse browser mode changes while RC holds a manual mode
-  - [ ] Video track: test pattern / file source in SITL mode (via a GStreamer pipeline or Pion's sample writer)
+  - [ ] Video track: test pattern in SITL mode
   - [ ] Local command and flight log (JSONL)
+  - [ ] WSS client to signalling with a per-drone key; verify the Ed25519 session token before answering an offer
+- [ ] Generate JSON Schema from the zod `protocol/` definitions; Go types generated from it or hand-mirrored with tests
+
+### 1c: Server + real link
+- [ ] Move `protocol/` to a shared workspace package (`packages/protocol`)
 - [ ] `server/` (TypeScript, Node 24, Fastify):
   - [ ] Auth: argon2id, session cookies, rate limiting, admin seeded from env
   - [ ] Drone registry (per-drone keys) and session-token minting (Ed25519)
   - [ ] Signalling WebSocket relay between the browser and the drone
   - [ ] Missions CRUD and log upload endpoint
   - [ ] `docker-compose.yml`: server, Caddy, coturn (with time-limited TURN credentials)
-- [ ] `web/` (React + Vite + TS, MapLibre, responsive and mobile-first):
-  - [ ] Login
-  - [ ] Drone page: WebRTC connect with a status badge (direct vs relayed, RTT, bitrate)
-  - [ ] Live map: aircraft, heading, trail, home, mission and geofence overlay
-  - [ ] HUD: mode, armed state, battery, airspeed, altitude, GPS, link quality, RC link / RC override banner
-  - [ ] Video panel
-  - [ ] Mission planner: VTOL takeoff → waypoints → VTOL land. Save and load missions.
-  - [ ] Pre-flight checklist gate. Commands: arm, start, pause, resume, RTL, QLAND, each with confirmation.
+- [ ] `web/`: `WebRtcLink`, `HttpAuthClient`, `HttpMissionRepository`. All pass the same contract tests. Switch with `VITE_VEHICLE_LINK=webrtc`.
 - [ ] Test end to end in SITL: log in from a phone on mobile data → plan → upload → arm → fly → pause/resume → RTL → land.
 - [ ] Test forced-TURN mode (`iceTransportPolicy: "relay"`), and kill the agent mid-flight to check the SITL failsafe.
 
-**Exit:** a full autonomous VTOL mission in SITL, run from a phone browser and a laptop browser, through the deployed VPS, with both direct and relayed paths tested.
+**Exit:** a full autonomous VTOL mission in SITL, run from a phone browser and a laptop browser, through the deployed VPS, with both direct and relayed paths tested. **No UI feature code changed when switching from MockLink to WebRtcLink.**
 
 ## Phase 2: Air unit on the bench
 - [ ] Radxa Zero 3W: flash a minimal Debian/Armbian. Cross-compile the agent (`GOARCH=arm64`). Run it as a systemd service.
@@ -90,4 +103,4 @@ Build everything so the **drone agent runs on a laptop against SITL**. It become
 ---
 
 ## Suggested first CLI session
-> "Read CLAUDE.md and docs/PLAN.md. Start Phase 1: set up `sim/` with ArduPlane QuadPlane SITL in Docker, then scaffold `agent/`, `server/` and `web/`."
+> "Read CLAUDE.md, docs/PLAN.md and docs/FRONTEND.md. Start Phase 1a: scaffold `web/` and build the domain types, protocol schemas, VehicleLink interface + contract tests, and MockLink first, before any UI screens."

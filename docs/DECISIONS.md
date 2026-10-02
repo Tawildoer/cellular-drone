@@ -36,3 +36,8 @@ SpeedyBee F405 WING is cheap, and you already have bootloader files for it. Howe
 ## ADR-0008: Permanent local RC override (2026-10-02, accepted)
 **Decision:** An ELRS receiver wired directly to the FC is a **permanent** part of the system, not a development-only tool. The RC pilot can take control at any time by changing the mode switch, and RC always has authority over browser commands. Losing RC range during AUTO **continues the mission**. Cellular loss is handled by the GCS failsafe. The agent reports RC state and refuses browser mode changes while RC holds a manual mode.
 **Consequences:** "No manual control" (ADR-0001) applies only to the cellular/browser path. The ArduPilot RC and GCS failsafe parameters must be designed together and tested in SITL (an RC-loss simulation) before flight.
+
+## ADR-0009: Frontend first, behind a transport-agnostic contract (2026-10-02, accepted)
+**Context:** The user wants to start with the UI. The backend architecture (WebRTC P2P vs relay, agent implementation) could still change.
+**Decision:** Build `web/` first against an in-browser `MockLink` simulator. The UI depends only on the app-owned `domain/` types, the versioned `protocol/` messages (zod) and the `VehicleLink` / `AuthClient` / `MissionRepository` interfaces. A shared contract test suite defines correct link behaviour. The full design is in `docs/FRONTEND.md`.
+**Consequences:** Swapping the backend means writing one new `VehicleLink` implementation that passes the contract tests, with no UI changes. The agent must emit the same `protocol/` messages, so the domain vocabulary (not MAVLink) is the source of truth for the UI.
