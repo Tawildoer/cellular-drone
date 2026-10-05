@@ -13,5 +13,5 @@
 | RC override | ELRS receiver + transmitter (EdgeTX radio) | €20–150 | Permanent override link (ADR-0008) |
 | Power | 5 V 3–5 A BEC + low-ESR cap | €10 | SBC + modem TX peaks |
 | Batteries | Li-ion / LiPo per airframe | €40–100 | |
-| Data SIM | Data SIM (CGNAT fine, TURN handles it) | monthly | Check the carrier's terms for airborne use |
+| Data SIM | Data SIM that **must provide IPv6** (dual-stack IPv4 + IPv6), ideally on the same carrier as the operator's phone | monthly | IPv6 is the direct path (ADR-0015): carrier IPv4 NAT blocks direct connections. Many data-only and reseller SIMs are IPv4-only; confirm before buying. Check the carrier's terms for airborne use. |
 | VPS | 1–2 vCPU, 2 GB RAM, near the flying area | €5–10/mo | Watch TURN bandwidth allowance |

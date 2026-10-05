@@ -75,3 +75,27 @@ The browser talks to it through `WsLink` (`web/src/link/ws/WsLink.ts`), a new `V
 - The Pi 5 has no hardware H.264 encoder (the Pi 4 had one), so video uses software x264. Transport results are valid; CPU and encode-latency numbers do not predict the Radxa's MPP encoder.
 - Same architecture as the Radxa (arm64), so the same `GOARCH=arm64` agent binary carries over.
 - With the Pi on wifi and the browser on the hotspot, the constrained direction is the hotspot's download, not the drone's upload (the real bottleneck). NAT behaviour is realistic; bandwidth and latency are not until the Pi itself moves onto LTE.
+
+## ADR-0015: IPv6 end to end is the direct path; TURN deferred (2026-10-05, accepted)
+**Context:** The step 2 link test (see Link test results below) found the phone hotspot's IPv4 NAT symmetric, so with STUN alone the browser couldn't reach the Pi. Over IPv4 that means a TURN relay. The user wants the lowest possible latency and no extra infrastructure beyond what's already planned. The same hotspot's IPv6 mapping is endpoint-independent (hole-punch friendly), and the operator's main network is that phone hotspot.
+**Decision:** Treat IPv6 end to end as the intended direct path:
+- The drone's data SIM must provide IPv6 (BOM), ideally on the same carrier as the operator's phone.
+- The modem's data connection requests IPv4 and IPv6 together (`ipv4v6`). This is configuration, not firmware.
+- The agent's `-iface` points at the modem interface (e.g. `wwan0`) once it exists.
+- No code change: WebRTC and Pion already gather and prefer IPv6 candidates.
+
+TURN is deferred, not dropped: coturn is not built now (Phase 1c step 3 is on hold).
+**Consequences:**
+- An operator on an IPv4-only network (most home wifi, including the user's) can't connect to the drone until TURN exists.
+- Still unproven: whether the carrier blocks unsolicited incoming IPv6 between two mobile devices. The first test with the real modem (or a second phone hotspotting the Pi) must settle this.
+- Revisit, and build coturn on the planned VPS, if that test fails or operators need IPv4-only networks. A public-IPv4 SIM is the other no-relay fallback.
+
+## Link test results (test matrix from `docs/P2P_TESTING.md`)
+Raw ICE detail lives in the agent's JSONL log and the browser console (`[WebRtcLink]`). NAT mapping measured with `agent/cmd/natcheck`.
+
+| Date | Drone side (Pi 5) | Browser side (Mac, Chrome) | IPv6 | Result | Setup | RTT | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-10-05 | Home wifi, home NAT | Home wifi, same LAN | Pi none | Direct, host ↔ host | < 2 s | 5–13 ms | 720p30 software x264 at 1.5 Mbit/s plays; telemetry flows. Step 1 passed. |
+| 2026-10-05 | Home wifi, home NAT | Phone hotspot (Telstra, from the address ranges) | Mac yes, Pi none | **No path**, STUN only; ICE restart also failed | — | — | Hotspot IPv4 NAT is symmetric: one socket got ports 47661/47662/47663 for three STUN servers (sequential allocation). Its IPv6 is endpoint-independent. The home NAT apparently filters by address and port, despite the old RFC 3489 client reporting "Independent Filter". Symmetric vs port-restricted can't hole-punch: TURN is required for this pairing. |
+
+**Takeaway so far:** carrier IPv4 on its own can't be relied on for a direct path, so TURN is mandatory for the real system. IPv6 looks promising: the hotspot's IPv6 mapping is endpoint-independent, so a drone and browser that both have carrier IPv6 may connect directly. Test that once the Pi is on LTE.

@@ -1,7 +1,8 @@
 # P2P link testing with a Raspberry Pi 5 (handoff notes)
 
-Notes from a planning chat (2026-10-05), to pick up in the CLI. Suggested location: `docs/P2P_TESTING.md`.
-Nothing here is built yet. Record the setup as an ADR before starting (draft below), and add tasks to `docs/PLAN.md`.
+Notes from a planning chat (2026-10-05). Status: recorded as ADR-0014, and the tasks are in `docs/PLAN.md`.
+Steps 1 and 2 are done. Results are in `docs/DECISIONS.md` (Link test results). The hotspot's symmetric IPv4 NAT led to
+ADR-0015: IPv6 end to end is the direct path, and TURN is on hold.
 
 ## Goal
 

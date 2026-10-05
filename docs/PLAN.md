@@ -63,15 +63,15 @@ Order: **frontend first against a mock vehicle**, then the real backend undernea
 **Exit:** a full autonomous VTOL mission in SITL, run from a phone browser and a laptop browser, through the deployed VPS, with both direct and relayed paths tested. **No UI feature code changed when switching from MockLink to WebRtcLink.**
 
 ### Link slice on a Raspberry Pi 5 (pulled forward from 1b/1c, ADR-0014, details in `docs/P2P_TESTING.md`)
-- [ ] 1. Prove the basics with both ends on home wifi:
-  - [ ] `server/`: minimal signalling WebSocket relay (no auth yet)
-  - [ ] `agent/`: Go + Pion on the Pi. WSS to signalling with reconnect; `telemetry` (unordered, `maxRetransmits: 0`) and `control` (reliable) channels; `ping`/`pong` and a stub `telemetry.state` in the `protocol/` v1 envelope; session-token check stubbed but in the code path; ICE state and selected pair logged as JSONL
-  - [ ] Video: GStreamer `videotestsrc → x264enc` (720p30, 1–2 Mbps) into a Pion track (the Pi 5 has no hardware H.264 encoder)
-  - [ ] `web/`: `WebRtcLink` implementing `VehicleLink` (browser is the offerer and drives ICE restart); `getStats()` feeds `LinkStatus` path, `rttMs`, `videoKbps`
-- [ ] 2. Laptop on the phone hotspot; signalling reachable publicly (VPS or tunnel); STUN only. Check IPv6 and the selected pair.
-- [ ] 3. coturn on the VPS with time-limited credentials; forced-relay test (`iceTransportPolicy: "relay"`)
+- [x] 1. Prove the basics with both ends on home wifi (2026-10-05: Pi agent ↔ Chrome on the same LAN, direct host pair, 720p video, telemetry, RTT 5–13 ms):
+  - [x] `server/`: minimal signalling WebSocket relay (no auth yet)
+  - [x] `agent/`: Go + Pion on the Pi. WSS to signalling with reconnect; `telemetry` (unordered, `maxRetransmits: 0`) and `control` (reliable) channels; `ping`/`pong` and a stub `telemetry.state` in the `protocol/` v1 envelope; session-token check stubbed but in the code path; ICE state and selected pair logged as JSONL
+  - [x] Video: GStreamer `videotestsrc → x264enc` (720p30, 1–2 Mbps) into a Pion track (the Pi 5 has no hardware H.264 encoder)
+  - [x] `web/`: `WebRtcLink` implementing `VehicleLink` (browser is the offerer and drives ICE restart); `getStats()` feeds `LinkStatus` path, `rttMs`, `videoKbps`
+- [x] 2. Laptop on the phone hotspot; signalling reachable publicly (VPS or tunnel); STUN only. Check IPv6 and the selected pair. (2026-10-05: no path, as the hotspot IPv4 NAT is symmetric, so TURN is needed; see DECISIONS.md, Link test results)
+- [ ] 3. **On hold (ADR-0015):** coturn on the VPS with time-limited credentials; forced-relay test (`iceTransportPolicy: "relay"`). Build it if the IPv6 test in step 5 fails, or operators need IPv4-only networks.
 - [ ] 4. netns lab on the Pi: own NAT, `tc netem` impairment, scripted outages and IP changes (ICE restart)
-- [ ] 5. Pi on the hotspot, then a real SIM and modem (EC25-AU or EG25-G, band 28): measure how often the carrier forces TURN
+- [ ] 5. Pi on a real IPv6-capable SIM and modem (EC25-AU or EG25-G, band 28), configured for IPv4 and IPv6 (`ipv4v6`), agent `-iface wwan0`. **First test:** browser on the phone hotspot, check the selected pair is IPv6 and direct, which proves the carrier allows inbound IPv6 between mobiles (ADR-0015).
 - [ ] Record each run's results (path, setup time, recovery time, RTT, bitrate) in `docs/DECISIONS.md`
 
 ## Phase 2: Air unit on the bench
