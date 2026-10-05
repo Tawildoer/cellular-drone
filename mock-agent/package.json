@@ -1,0 +1,20 @@
+{
+  "name": "mock-agent",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Standalone dev stand-in for the real drone agent (ADR-0012) — runs the same simulated-VTOL engine as MockLink, but as its own process behind a WebSocket, so the drone keeps flying/keeps its state across browser reloads. Not the real agent/ (that stays Go, per CLAUDE.md).",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "typescript": "~6.0.2"
+  }
+}

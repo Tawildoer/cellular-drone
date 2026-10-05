@@ -1,0 +1,11 @@
+{
+  "name": "cellular-drone",
+  "private": true,
+  "description": "Root-level dev orchestration only — each of mock-agent/, web/, server/, etc. is its own independent package.",
+  "scripts": {
+    "dev": "concurrently -n mock-agent,web -c blue,green \"npm:start --prefix mock-agent\" \"npm:dev --prefix web\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

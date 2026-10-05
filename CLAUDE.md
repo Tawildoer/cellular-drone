@@ -20,10 +20,12 @@ A fixed-wing **VTOL (ArduPlane QuadPlane)** that flies **autonomous missions onl
 ## Repo layout
 - `sim/`: ArduPlane SITL (Docker)
 - `agent/`: drone agent (Go). Runs on a laptop against SITL, or on the Radxa.
+- `mock-agent/`: dev-only standalone Node process standing in for `agent/` (ADR-0012) — runs the same simulated-VTOL engine as `MockLink`, behind a WebSocket, so the drone's state survives browser reloads. Not the real agent.
 - `server/`: auth + signalling + API (TypeScript/Node 24), docker-compose, Caddy, coturn
-- `web/`: React + Vite + TS frontend (MapLibre), mobile-first
+- `web/`: React + Vite + TS frontend (MapLibre), laptop-primary for now (operator's base station); phone layout deferred, same components
 
 ## Conventions
+- **Don't run verification (`npm run build`/`lint`/`test`, Playwright/live-browser checks) after a change without the user's confirmation first.** Ask before running it, don't just run it automatically.
 - **Frontend is built first against `MockLink` (ADR-0009).** UI code (`features/`, `state/`) depends only on `domain/` types and the `VehicleLink` / `AuthClient` / `MissionRepository` interfaces. It never imports a concrete link, WebRTC, MAVLink or server details. Only `app/` wires up implementations. Every link implementation must pass the shared contract tests.
 - `protocol/` (zod, versioned envelope) is the single wire contract between the web app, the server and the agent. Change it deliberately and bump `v` on breaking changes.
 - Develop and test everything against SITL before hardware.

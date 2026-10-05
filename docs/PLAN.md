@@ -20,18 +20,18 @@ Guiding principle: **build software against the simulator first, then hardware o
 Order: **frontend first against a mock vehicle**, then the real backend underneath it. See `docs/FRONTEND.md` for the contract that keeps UI work safe from backend changes (ADR-0009).
 
 ### 1a: Frontend against MockLink  ← START HERE
-- [ ] Scaffold `web/`: Vite + React + TS (strict), Tailwind + shadcn/ui, Zustand, zod, MapLibre, Vitest, Playwright, ESLint import-boundary rule
-- [ ] `domain/` types + pure helpers (mission validation, preflight checklist), with unit tests
-- [ ] `protocol/` zod message schemas (v1 envelope), with round-trip tests
-- [ ] `link/VehicleLink` interface + **contract test suite**
-- [ ] `MockLink`: simulated VTOL flying missions, canvas test-pattern video, fault injection (latency, loss, link drop, RC override, low battery, failsafe). Passes the contract tests.
-- [ ] `services/`: `AuthClient` (mock) + `MissionRepository` (localStorage)
+- [x] Scaffold `web/`: Vite + React + TS (strict), Tailwind + shadcn/ui, Zustand, zod, MapLibre, Vitest, Playwright, ESLint import-boundary rule
+- [x] `domain/` types + pure helpers (mission validation, preflight checklist), with unit tests
+- [x] `protocol/` zod message schemas (v1 envelope), with round-trip tests
+- [x] `link/VehicleLink` interface + **contract test suite**
+- [x] `MockLink`: simulated VTOL flying missions, canvas test-pattern video, fault injection (latency, loss, link drop, RC override, low battery, failsafe). Passes the contract tests.
+- [x] `services/`: `AuthClient` (mock) + `MissionRepository` (localStorage)
 - [ ] UI: login → vehicle list → flight screen (map, HUD, video, link badge, RC override banner, event log)
 - [ ] UI: mission planner (tap to add, VTOL takeoff/land items, inline validation, save and load)
 - [ ] UI: preflight checklist gate + command bar with hold/slide-to-confirm
 - [ ] Dev panel for MockLink fault injection
 - [ ] Playwright smoke: login → plan → upload → arm → start → pause/resume → RTL
-- [ ] Check it on Chrome desktop, Chrome Android and iOS Safari (phone layout)
+- [ ] Check it on Chrome desktop (laptop, primary target now). Chrome Android / iOS Safari (phone layout) deferred — same components, verify later.
 
 **Exit 1a:** the whole operator workflow is usable end to end against MockLink on phone and laptop.
 
@@ -61,6 +61,18 @@ Order: **frontend first against a mock vehicle**, then the real backend undernea
 - [ ] Test forced-TURN mode (`iceTransportPolicy: "relay"`), and kill the agent mid-flight to check the SITL failsafe.
 
 **Exit:** a full autonomous VTOL mission in SITL, run from a phone browser and a laptop browser, through the deployed VPS, with both direct and relayed paths tested. **No UI feature code changed when switching from MockLink to WebRtcLink.**
+
+### Link slice on a Raspberry Pi 5 (pulled forward from 1b/1c, ADR-0014, details in `docs/P2P_TESTING.md`)
+- [ ] 1. Prove the basics with both ends on home wifi:
+  - [ ] `server/`: minimal signalling WebSocket relay (no auth yet)
+  - [ ] `agent/`: Go + Pion on the Pi. WSS to signalling with reconnect; `telemetry` (unordered, `maxRetransmits: 0`) and `control` (reliable) channels; `ping`/`pong` and a stub `telemetry.state` in the `protocol/` v1 envelope; session-token check stubbed but in the code path; ICE state and selected pair logged as JSONL
+  - [ ] Video: GStreamer `videotestsrc → x264enc` (720p30, 1–2 Mbps) into a Pion track (the Pi 5 has no hardware H.264 encoder)
+  - [ ] `web/`: `WebRtcLink` implementing `VehicleLink` (browser is the offerer and drives ICE restart); `getStats()` feeds `LinkStatus` path, `rttMs`, `videoKbps`
+- [ ] 2. Laptop on the phone hotspot; signalling reachable publicly (VPS or tunnel); STUN only. Check IPv6 and the selected pair.
+- [ ] 3. coturn on the VPS with time-limited credentials; forced-relay test (`iceTransportPolicy: "relay"`)
+- [ ] 4. netns lab on the Pi: own NAT, `tc netem` impairment, scripted outages and IP changes (ICE restart)
+- [ ] 5. Pi on the hotspot, then a real SIM and modem (EC25-AU or EG25-G, band 28): measure how often the carrier forces TURN
+- [ ] Record each run's results (path, setup time, recovery time, RTT, bitrate) in `docs/DECISIONS.md`
 
 ## Phase 2: Air unit on the bench
 - [ ] Radxa Zero 3W: flash a minimal Debian/Armbian. Cross-compile the agent (`GOARCH=arm64`). Run it as a systemd service.

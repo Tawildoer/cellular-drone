@@ -1,0 +1,124 @@
+@import 'tailwindcss';
+
+/* ───────────────────────────────────────────────
+   Dark sci-fi HUD theme, ported from the color/type
+   tokens of github.com/bilawalsidhu/gods-eye-view
+   (see docs/DECISIONS.md ADR-0010). Dark-only.
+   ─────────────────────────────────────────────── */
+
+:root {
+  color-scheme: dark;
+
+  --radius: 0.625rem;
+  --panel-radius: 1rem;
+
+  --background: #0a0a0f;
+  --foreground: #e8eaed;
+  --card: #12121c;
+  --card-foreground: #e8eaed;
+  --popover: #12121c;
+  --popover-foreground: #e8eaed;
+  --primary: #00d4ff;
+  --primary-foreground: #0a0a0f;
+  --secondary: #1c1c28;
+  --secondary-foreground: #e8eaed;
+  --muted: #15151f;
+  --muted-foreground: rgba(232, 234, 237, 0.5);
+  --accent: rgba(0, 212, 255, 0.15);
+  --accent-foreground: #00d4ff;
+  --destructive: #ff4d6d;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.08);
+  --ring: #00d4ff;
+
+  /* HUD-specific tokens, used directly by features/ (not part of the shadcn set). */
+  --glass-bg: rgba(12, 12, 20, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border-hover: rgba(255, 255, 255, 0.15);
+  --accent-glow: rgba(0, 212, 255, 0.4);
+  --text-dim: rgba(232, 234, 237, 0.3);
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+
+  /* Fixed status palette (dataviz skill references/palette.md) — never themed,
+   * always paired with an icon + label, never color alone. */
+  --status-good: #0ca30c;
+  --status-warning: #fab219;
+  --status-serious: #ec835a;
+  --status-critical: #d03b3b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --color-status-good: var(--status-good);
+  --color-status-warning: var(--status-warning);
+  --color-status-serious: var(--status-serious);
+  --color-status-critical: var(--status-critical);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    margin: 0;
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer components {
+  /* Frosted glass panel chrome — link badge, event log, command bar, dev panel. */
+  .glass-panel {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--panel-radius);
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.5),
+      0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+      0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  }
+
+  /* Small uppercase mono readouts for live telemetry (HUD strip, link badge). */
+  .hud-label {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .hud-value {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    color: var(--primary);
+    text-shadow: 0 0 8px var(--accent-glow);
+  }
+}

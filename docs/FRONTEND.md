@@ -28,7 +28,7 @@ The app's own vocabulary. It's stable even if the flight stack or transport chan
 - `VehicleState`: position (lat, lon, `altRelM`, `altAmslM`), attitude (roll, pitch, yaw in degrees), `groundSpeedMps`, `airspeedMps`, `climbMps`, battery (V, A, %), GPS (fix type, satellites, HDOP), `flightMode` (an **app enum**, see below), `armed`, `vtolState` (`mc` | `fw` | `transition`), `landed`, home, `missionProgress` (`currentIndex`, total), `rc` (`linked`, `overrideActive`), `failsafe` flags, `updatedAt`.
 - `FlightMode`: app enum (`AUTO`, `LOITER`, `QLOITER`, `RTL`, `QLAND`, `QHOVER`, `FBWA`, `MANUAL`, `UNKNOWN`…). The agent maps from ArduPilot custom modes. The UI never sees raw numbers.
 - `Mission`: `{ id, name, items: MissionItem[], fence?, createdAt, updatedAt }`
-- `MissionItem` (discriminated union): `vtolTakeoff{altM}`, `waypoint{lat,lon,altM,acceptRadiusM?}`, `loiter{lat,lon,altM,radiusM,turns|timeS}`, `vtolLand{lat,lon}`, `returnToLaunch`
+- `MissionItem` (discriminated union): `vtolTakeoff{altM}`, `waypoint{lat,lon,altM,acceptRadiusM?}`, `loiter{lat,lon,altM,radiusM,turns|untilUtcMinuteOfDay}` (ADR-0013), `vtolLand{lat,lon}`, `returnToLaunch`
 - `Command` (discriminated union, matching the whitelist in ARCHITECTURE.md): `arm`, `disarm`, `mission.start`, `mode.pause`, `mode.resume`, `mode.rtl`, `mode.qland`, `video.config{preset}`. **No manual-control commands exist in the type at all.**
 - `CommandResult`: `{ ok: true } | { ok: false, reason: 'rejected_by_vehicle' | 'blocked_rc_override' | 'preflight_failed' | 'timeout' | 'not_connected' | 'unauthorised', detail? }`
 - `LinkStatus`: `{ state: 'disconnected' | 'connecting' | 'connected' | 'degraded', path?: 'direct' | 'relayed' | 'unknown', rttMs?, videoKbps?, lastTelemetryAt? }`
@@ -78,7 +78,7 @@ All real links use **the same `protocol/` messages**, so swapping transports tou
 
 ## 5. UI features (built against MockLink)
 - Login. Vehicle list (one drone for now).
-- Flight screen, mobile-first. Map (MapLibre) with the aircraft icon and heading, trail, home, mission path, fence. HUD strip. Video panel (dockable or picture-in-picture). Link badge (direct/relayed, RTT). **RC override banner** (always visible when active).
+- Flight screen, laptop-primary (operator runs it as a base station), phone support added later. Map (MapLibre) with the aircraft icon and heading, trail, home, mission path, fence. HUD strip. Video panel: swappable PiP (one of map/video full-screen, the other a small overlay tile; tap the tile to swap) — the same layout on every screen size, not a desktop/phone branch. Link badge (direct/relayed, RTT). **RC override banner** (always visible when active).
 - Mission planner: tap the map to add waypoints, edit altitudes, VTOL takeoff and land items, validation errors inline, save and load.
 - Preflight checklist (blocks arm and start until complete) + command bar with confirm dialogs (slide-to-confirm or hold-to-confirm on touch).
 - Event log panel (status text, failsafes, command results).
@@ -90,4 +90,4 @@ All real links use **the same `protocol/` messages**, so swapping transports tou
 - Playwright smoke test: login → plan mission → upload → arm → start → RTL, against MockLink.
 
 ## Stack
-React + Vite + TypeScript (strict), MapLibre GL (OSM/open tiles), Zustand, zod, Tailwind + shadcn/ui, Vitest, Playwright. Mobile-first; tested in Chrome desktop, Chrome Android and iOS Safari.
+React + Vite + TypeScript (strict), MapLibre GL (OSM/open tiles), Zustand, zod, Tailwind + shadcn/ui, Vitest, Playwright. Laptop-primary for now (the operator's base station); verify phone layout later — same components, not a separate build.
