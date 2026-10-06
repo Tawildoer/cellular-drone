@@ -90,6 +90,15 @@ TURN is deferred, not dropped: coturn is not built now (Phase 1c step 3 is on ho
 - Still unproven: whether the carrier blocks unsolicited incoming IPv6 between two mobile devices. The first test with the real modem (or a second phone hotspotting the Pi) must settle this.
 - Revisit, and build coturn on the planned VPS, if that test fails or operators need IPv4-only networks. A public-IPv4 SIM is the other no-relay fallback.
 
+## ADR-0016: Public mock-UI demo on Cloudflare at `drone.tomwildoer.com` (2026-10-06, accepted)
+**Context:** The user wanted the web UI publicly reachable from any device to show people, without standing up the backend (agent, signalling, auth) yet. No real drone is at risk, so the open-signalling security gap doesn't apply — there's nothing on the other end.
+**Decision:** Deploy `web/` as a static build with the **in-browser mock drone** (`VITE_VEHICLE_LINK=mock`) to Cloudflare, served at `https://drone.tomwildoer.com` (free URL `cellular-drone.tom-wildoer.workers.dev`). The demo login (`operator` / `changeme`) comes from gitignored `web/.env.local`, baked into the JS bundle at build time — a **cosmetic gate, not real auth**. No `MockLink`/`WebRtcLink`/UI code changed; going to the real drone path later is a rebuild with `VITE_VEHICLE_LINK=webrtc` (ADR-0009).
+**Deployment notes:** `wrangler pages project create` delegated to the current Cloudflare flow and deployed the project as a **Worker** with static assets ("Pages, now part of Workers"), *not* a classic Pages project. So:
+- Redeploys use `npm run deploy` (= `npm run build && wrangler deploy`), not `wrangler pages deploy`.
+- The custom domain is a **Worker Custom Domain binding** (dashboard → the worker → Settings → Domains & Routes), not a hand-made CNAME.
+- That CLI edited the repo: added `cloudflare()` to `web/vite.config.ts`; added `deploy`/`preview` scripts and `wrangler` + `@cloudflare/vite-plugin` devDeps to `web/package.json`; created `web/wrangler.jsonc`; extended `web/.gitignore` (`.wrangler`, `.dev.vars*`, `.env*`). We changed `wrangler.jsonc` `name` from the generated `web` to `cellular-drone` so redeploys stay on the same worker/URL.
+**Consequences:** The demo is a **per-device mock sandbox** — missions live in `localStorage` and state resets on reload, so it's not a shared live view and not a security boundary. Fine for showing the UI; revisit all of this (real auth, signalling, a live drone end) when the backend lands.
+
 ## Link test results (test matrix from `docs/P2P_TESTING.md`)
 Raw ICE detail lives in the agent's JSONL log and the browser console (`[WebRtcLink]`). NAT mapping measured with `agent/cmd/natcheck`.
 
