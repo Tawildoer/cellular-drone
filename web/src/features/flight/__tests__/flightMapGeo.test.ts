@@ -2,14 +2,21 @@ import { describe, expect, it } from 'vitest'
 import type { Mission } from '../../../domain'
 import { haversineDistanceM } from '../../../domain'
 import {
+  AIRCRAFT_MARKER_MIN_PX,
+  aircraftMarkerScale,
   appendTrailPoint,
   buildAircraftMarkerGeoJson,
   buildFenceGeoJson,
   buildFloatingTrailGeoJson,
   buildMissionFloatingPathGeoJson,
+  buildMissionLoiterRingLinesGeoJson,
   buildMissionLoiterRingsGeoJson,
+  buildMissionPathLinesGeoJson,
   buildMissionWaypointMarkersGeoJson,
+  buildMissionWaypointPointsGeoJson,
+  buildTrailLineGeoJson,
   isLappingCurrentLoiter,
+  metersPerPixel,
   MAX_TRAIL_POINTS,
   type AltitudePoint,
 } from '../flightMapGeo'
@@ -280,6 +287,31 @@ describe('buildAircraftMarkerGeoJson', () => {
     expect(nose?.[0]).toBeGreaterThan(0) // further east (higher lon) than center
     expect(nose?.[1]).toBeCloseTo(0, 6) // same latitude as center
   })
+
+  it('scales the footprint but not the altitude', () => {
+    const pose = { point: { lat: 0, lon: 0 }, altM: 50, headingDeg: 0 }
+    const base = buildAircraftMarkerGeoJson(pose).features[0]
+    const big = buildAircraftMarkerGeoJson(pose, 3).features[0]
+    expect(big?.geometry.coordinates[0]?.[0]?.[1]).toBeCloseTo((base?.geometry.coordinates[0]?.[0]?.[1] ?? 0) * 3, 9)
+    expect(big?.properties).toEqual(base?.properties)
+  })
+})
+
+describe('aircraftMarkerScale', () => {
+  it('enlarges the marker to the minimum on-screen size when zoomed out', () => {
+    // Zoom 16 at the equator: ~1.19 m/px, so an 8m marker is ~6.7px unscaled.
+    const scale = aircraftMarkerScale(16, 0)
+    const metersPerPx = 40_075_016.686 / (512 * 2 ** 16)
+    expect((8 * scale) / metersPerPx).toBeCloseTo(AIRCRAFT_MARKER_MIN_PX, 6)
+  })
+
+  it('stays at true scale once zoomed in past the minimum', () => {
+    expect(aircraftMarkerScale(22, 0)).toBe(1)
+  })
+
+  it('grows as the map zooms out', () => {
+    expect(aircraftMarkerScale(12, -37.86)).toBeGreaterThan(aircraftMarkerScale(16, -37.86))
+  })
 })
 
 describe('buildMissionWaypointMarkersGeoJson', () => {
@@ -470,5 +502,115 @@ describe('buildFenceGeoJson', () => {
     const ring = feature?.geometry.coordinates[0]
     expect(ring?.[0]).toEqual(ring?.[ring.length - 1])
     expect(ring).toHaveLength(4)
+  })
+})
+
+describe('metersPerPixel', () => {
+  it('matches MapLibre’s 512px world at zoom 0 and halves with each zoom level', () => {
+    expect(metersPerPixel(0, 0)).toBeCloseTo(40_075_016.686 / 512, 6)
+    expect(metersPerPixel(13, 0)).toBeCloseTo(metersPerPixel(12, 0) / 2, 9)
+  })
+})
+
+describe('overlay sizing when zoomed out', () => {
+  const M_PER_DEG = 111_320
+  // Zoom 12 at the equator: ~19m per pixel — far enough out that the
+  // true-scale overlays (1.2m-wide path, 4m waypoint blocks) are sub-pixel.
+  const zoomedOut = metersPerPixel(12, 0)
+  const zoomedIn = 0.01
+
+  function latSpanM(feature: { geometry: { coordinates: number[][][] } } | undefined): number {
+    const lats = feature?.geometry.coordinates[0]?.map((c) => c[1] ?? 0) ?? []
+    return (Math.max(...lats) - Math.min(...lats)) * M_PER_DEG
+  }
+
+  it('keeps waypoint blocks at least 12px across', () => {
+    const m = mission({ items: [{ type: 'waypoint', lat: 0, lon: 0, altM: 50 }] })
+    const out = buildMissionWaypointMarkersGeoJson(m, undefined, zoomedOut).features[0]
+    expect(latSpanM(out) / zoomedOut).toBeCloseTo(12, 1)
+    // Up close the real 4m size already exceeds 12px, so it's left alone.
+    const near = buildMissionWaypointMarkersGeoJson(m, undefined, zoomedIn).features[0]
+    expect(latSpanM(near)).toBeCloseTo(4, 1)
+  })
+
+  it('keeps the path at least 3px wide, with fewer, longer dashes', () => {
+    // A 2km east-west leg along the equator, so a dash's width is all latitude.
+    const m = mission({ items: [{ type: 'waypoint', lat: 0, lon: 0, altM: 50 }, { type: 'waypoint', lat: 0, lon: 2000 / M_PER_DEG, altM: 50 }] })
+    const trueScale = buildMissionFloatingPathGeoJson(m).features
+    const out = buildMissionFloatingPathGeoJson(m, undefined, undefined, undefined, zoomedOut).features
+    expect(latSpanM(out[0]) / zoomedOut).toBeCloseTo(3, 1)
+    expect(out.length).toBeGreaterThan(0)
+    expect(out.length).toBeLessThan(trueScale.length)
+  })
+
+  it('keeps altitudes unscaled', () => {
+    const m = mission({ items: [{ type: 'waypoint', lat: 0, lon: 0, altM: 50 }, { type: 'waypoint', lat: 0, lon: 0.01, altM: 50 }] })
+    const near = buildMissionFloatingPathGeoJson(m).features[0]?.properties
+    const out = buildMissionFloatingPathGeoJson(m, undefined, undefined, undefined, zoomedOut).features[0]?.properties
+    expect(out).toEqual(near)
+  })
+
+  it('keeps the loiter ring at least 3px wide', () => {
+    const m = mission({ items: [{ type: 'loiter', lat: 0, lon: 0, altM: 50, radiusM: 2000 }] })
+    const widths = buildMissionLoiterRingsGeoJson(m, undefined, zoomedOut).features.map((f) => {
+      // A dash at the ring's top or bottom runs east-west, so its width is its lat span.
+      const lats = f.geometry.coordinates[0]?.map((c) => c[1] ?? 0) ?? []
+      return { midLat: (Math.max(...lats) + Math.min(...lats)) / 2, spanM: latSpanM(f) }
+    })
+    const top = widths.reduce((a, b) => (b.midLat > a.midLat ? b : a))
+    expect(top.spanM / zoomedOut).toBeGreaterThanOrEqual(3 - 0.1)
+  })
+
+  it('keeps the flown trail at least 3px wide', () => {
+    const trail = [altPoint(0, 0, 50), altPoint(0, 2000 / M_PER_DEG, 50)]
+    const out = buildFloatingTrailGeoJson(trail, zoomedOut).features[0]
+    expect(latSpanM(out) / zoomedOut).toBeCloseTo(3, 1)
+  })
+})
+
+describe('flat (zoomed-out) overlays', () => {
+  const twoLegs = () =>
+    mission({
+      items: [
+        { type: 'vtolTakeoff', altM: 40 },
+        { type: 'waypoint', lat: 0, lon: 0.01, altM: 50 },
+        { type: 'loiter', lat: 0, lon: 0.02, altM: 60, radiusM: 80 },
+        { type: 'returnToLaunch' },
+      ],
+    })
+  const home = altPoint(0, 0, 0)
+
+  it('draws the trail as one line, or nothing with fewer than two points', () => {
+    expect(buildTrailLineGeoJson([altPoint(0, 0, 50)]).features).toEqual([])
+    const line = buildTrailLineGeoJson([altPoint(0, 0, 50), altPoint(0, 0.001, 50), altPoint(0, 0.002, 50)]).features[0]
+    expect(line?.geometry.coordinates).toEqual([[0, 0], [0.001, 0], [0.002, 0]])
+  })
+
+  it('draws a point per waypoint/loiter, dropping ones already flown through', () => {
+    expect(buildMissionWaypointPointsGeoJson(twoLegs()).features.map((f) => f.geometry.coordinates)).toEqual([[0.01, 0], [0.02, 0]])
+    expect(buildMissionWaypointPointsGeoJson(twoLegs(), 2).features).toHaveLength(1)
+  })
+
+  it('draws a line per leg from home, dropping cleared legs', () => {
+    const legs = buildMissionPathLinesGeoJson(twoLegs(), home).features
+    expect(legs.map((f) => f.geometry.coordinates)).toEqual([[[0, 0], [0.01, 0]], [[0.01, 0], [0.02, 0]]])
+    expect(buildMissionPathLinesGeoJson(twoLegs(), home, 2).features).toHaveLength(1)
+  })
+
+  it('starts the current leg at the drone instead of its origin', () => {
+    // Halfway along the leg from waypoint (index 1) to loiter (index 2).
+    const legs = buildMissionPathLinesGeoJson(twoLegs(), home, 2, { lat: 0, lon: 0.015 }).features
+    expect(legs).toHaveLength(1)
+    expect(legs[0]?.geometry.coordinates[0]?.[0]).toBeCloseTo(0.015, 6)
+    expect(legs[0]?.geometry.coordinates[1]).toEqual([0.02, 0])
+  })
+
+  it('draws each loiter as a closed circle at its radius', () => {
+    const ring = buildMissionLoiterRingLinesGeoJson(twoLegs()).features[0]?.geometry.coordinates ?? []
+    expect(ring[0]).toEqual(ring[ring.length - 1])
+    for (const [lon, lat] of ring) {
+      expect(haversineDistanceM({ lat: lat ?? 0, lon: lon ?? 0 }, { lat: 0, lon: 0.02 })).toBeCloseTo(80, 0)
+    }
+    expect(buildMissionLoiterRingLinesGeoJson(twoLegs(), 3).features).toEqual([])
   })
 })

@@ -1,5 +1,13 @@
 /** The app's own vocabulary for vehicle state. Stable even if the flight stack or transport changes. */
 
+/** An entry in the vehicle-selection list. */
+export interface VehicleDescriptor {
+  id: string
+  name: string
+  /** A simulated drone backed by the in-browser sim, not real hardware. */
+  demo?: boolean
+}
+
 export type FlightMode =
   | 'AUTO'
   | 'LOITER'

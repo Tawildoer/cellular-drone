@@ -10,6 +10,10 @@ export interface MockLinkOptions {
   home?: HomePosition
   /** Multiplies simulated seconds per tick. Default 1 (real time); tests use higher values to fly missions fast. */
   timeScale?: number
+  /** When set, connect() immediately uploads this mission, arms, starts it,
+   * and fast-forwards the sim by `warmUpS` seconds, so the drone appears
+   * already airborne mid-mission the moment the UI opens — the demo drone. */
+  autoFly?: { mission: Mission; warmUpS?: number }
 }
 
 function delay(ms: number): Promise<void> {
@@ -29,6 +33,7 @@ export class MockLink implements VehicleLink {
   private readonly tickMs: number
   private timeScale: number
   private readonly engine: DroneEngine
+  private readonly autoFly?: { mission: Mission; warmUpS?: number }
 
   private connectedAtMs: number | null = null
   private timer: ReturnType<typeof setInterval> | null = null
@@ -45,6 +50,7 @@ export class MockLink implements VehicleLink {
     this.tickMs = opts.tickMs ?? 100
     this.timeScale = opts.timeScale ?? 1
     this.engine = new DroneEngine({ home: opts.home })
+    this.autoFly = opts.autoFly
   }
 
   async connect(vehicleId: string): Promise<void> {
@@ -62,8 +68,20 @@ export class MockLink implements VehicleLink {
       lastTelemetryAt: Date.now(),
     })
     this.startVideo()
+    if (this.autoFly && !fault.linkDropped) this.runAutoFly(this.autoFly)
     this.emitState()
     this.timer = setInterval(() => this.tick(), this.tickMs)
+  }
+
+  /** Puts the sim straight into a flying mission (demo drone): upload, arm,
+   * start, then fast-forward so the UI opens on an already-airborne vehicle.
+   * Warm-up events are discarded — they'd all carry "now" as their time. */
+  private runAutoFly({ mission, warmUpS = 0 }: { mission: Mission; warmUpS?: number }): void {
+    this.engine.uploadMission(mission)
+    this.engine.applyCommand({ type: 'arm' })
+    this.engine.applyCommand({ type: 'mission.start' })
+    const step = 0.2
+    for (let t = 0; t < warmUpS; t += step) this.engine.tick(step)
   }
 
   async disconnect(): Promise<void> {

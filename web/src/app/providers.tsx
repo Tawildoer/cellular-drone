@@ -3,14 +3,14 @@ import { MockLink } from '../link/mock'
 import { createAuthStore, createMissionStore, createVehicleStore } from '../state'
 import { createAppServices, type AppServices } from './config'
 import { MockDevTools } from './MockDevTools'
-import { AppStoresContext, type AppStores } from './store-hooks'
+import { AppStoresContext, useVehicleStore, type AppStores } from './store-hooks'
 import { DEFAULT_USERNAME, DEFAULT_PASSWORD } from '../services/mock'
 
 export function AppProviders({ children }: { children: ReactNode }) {
   const [services] = useState<AppServices>(() => createAppServices())
   const [stores] = useState<AppStores>(() => ({
     authStore: createAuthStore(services.authClient),
-    vehicleStore: createVehicleStore(services.vehicleLink),
+    vehicleStore: createVehicleStore(services.resolveVehicleLink),
     missionStore: createMissionStore(services.missionRepository),
   }))
 
@@ -28,7 +28,15 @@ export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <AppStoresContext.Provider value={stores}>
       {children}
-      {import.meta.env.DEV && services.vehicleLink instanceof MockLink && <MockDevTools link={services.vehicleLink} />}
+      <DevTools />
     </AppStoresContext.Provider>
   )
+}
+
+/** Sim tuning panel (speed, look-ahead), shown whenever the connected vehicle
+ * is the in-browser sim — the demo drone, or any vehicle in a mock build — in
+ * every build, including the public demo. Never for a real vehicle link. */
+function DevTools() {
+  const activeLink = useVehicleStore((s) => s.activeLink)
+  return activeLink instanceof MockLink ? <MockDevTools link={activeLink} /> : null
 }

@@ -11,7 +11,7 @@ const MAX_LOOK_AHEAD_M = 200
 /**
  * Dev-only tuning panel for the mock simulated drone — speed up the sim and
  * adjust the L1 guidance look-ahead distance live, without editing code and
- * rebuilding. Only ever rendered when VITE_VEHICLE_LINK is the mock (see
+ * rebuilding. Only ever rendered while connected to a MockLink (see
  * providers.tsx) — a real vehicle link has no such knobs.
  */
 export function MockDevTools({ link }: { link: MockLink }) {

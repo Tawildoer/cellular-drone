@@ -1,11 +1,15 @@
 import { useState } from 'react'
+import type { VehicleDescriptor } from '../../domain'
 import { useAuthStore, useVehicleStore } from '../../app/store-hooks'
 import { Button } from '../../components/ui/button'
 
-// One drone for now (docs/FRONTEND.md) — a real fleet would come from an API.
-const VEHICLES = [{ id: 'drone-1', name: 'Drone 1' }]
-
-export function VehicleListScreen({ onConnected }: { onConnected: (vehicleId: string) => void }) {
+export function VehicleListScreen({
+  vehicles,
+  onConnected,
+}: {
+  vehicles: VehicleDescriptor[]
+  onConnected: (vehicleId: string) => void
+}) {
   const [connectingId, setConnectingId] = useState<string | null>(null)
   const username = useAuthStore((s) => s.user?.username)
   const logout = useAuthStore((s) => s.logout)
@@ -32,17 +36,32 @@ export function VehicleListScreen({ onConnected }: { onConnected: (vehicleId: st
 
       <div className="glass-panel flex w-full max-w-sm flex-col gap-3 px-6 py-7">
         <span className="hud-label">Vehicles</span>
-        {VEHICLES.map((vehicle) => (
+        {vehicles.map((vehicle) => (
           <Button
             key={vehicle.id}
             type="button"
             variant="secondary"
-            className="justify-between"
+            className="h-auto justify-between py-3"
             disabled={connectingId !== null}
             onClick={() => handleSelect(vehicle.id)}
           >
-            <span>{vehicle.name}</span>
-            <span className="hud-label">{connectingId === vehicle.id ? 'Connecting…' : 'Connect'}</span>
+            <span className="flex flex-col items-start gap-0.5">
+              <span className="flex items-center gap-2">
+                {vehicle.name}
+                {vehicle.demo && (
+                  <span
+                    className="hud-label rounded px-1.5 py-0.5 text-[10px] leading-none"
+                    style={{ color: 'var(--primary)', border: '1px solid var(--primary)' }}
+                  >
+                    Demo
+                  </span>
+                )}
+              </span>
+              {vehicle.demo && <span className="text-[11px] opacity-60">Simulated flight · no hardware</span>}
+            </span>
+            <span className="hud-label">
+              {connectingId === vehicle.id ? 'Connecting…' : vehicle.demo ? 'Launch' : 'Connect'}
+            </span>
           </Button>
         ))}
       </div>

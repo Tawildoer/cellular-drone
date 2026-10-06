@@ -17,7 +17,7 @@ async function renderWithStores(onConnected: (vehicleId: string) => void) {
 
   render(
     <AppStoresContext.Provider value={stores}>
-      <VehicleListScreen onConnected={onConnected} />
+      <VehicleListScreen vehicles={[{ id: 'drone-1', name: 'Drone 1' }]} onConnected={onConnected} />
     </AppStoresContext.Provider>,
   )
 
