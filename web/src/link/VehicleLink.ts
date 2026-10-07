@@ -1,4 +1,4 @@
-import type { Command, CommandResult, LinkStatus, Mission, VehicleEvent, VehicleState } from '../domain'
+import type { Command, CommandResult, LinkStatus, Mission, MissionUploadResult, VehicleEvent, VehicleState } from '../domain'
 
 export type Unsubscribe = () => void
 
@@ -18,8 +18,9 @@ export interface VehicleLink {
   onEvent(cb: (e: VehicleEvent) => void): Unsubscribe
 
   send(cmd: Command): Promise<CommandResult>
-  /** Resolves after the vehicle verifies the upload. */
-  uploadMission(m: Mission): Promise<CommandResult>
+  /** Resolves after the vehicle verifies the upload. On success it may
+   * carry the flight controller's readback (`onVehicle`). */
+  uploadMission(m: Mission): Promise<MissionUploadResult>
   downloadMission(): Promise<Mission | null>
 
   /** The UI just attaches this to a <video>. */

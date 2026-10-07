@@ -51,9 +51,11 @@ wss.on('connection', (ws) => {
         break
       }
       case 'mission.upload': {
-        const result = engine.uploadMission(message.payload)
+        const { onVehicle, ...result } = engine.uploadMission(message.payload)
         ws.send(
-          encodeMessage(createMessage('mission.uploaded', { missionId: message.payload.id, result }, { id: message.id })),
+          encodeMessage(
+            createMessage('mission.uploaded', { missionId: message.payload.id, result, onVehicle }, { id: message.id }),
+          ),
         )
         break
       }

@@ -7,6 +7,7 @@ A fixed-wing **VTOL (ArduPlane QuadPlane)** that flies **autonomous missions onl
 - `docs/ARCHITECTURE.md`: system design, session flow, command model, safety
 - `docs/DECISIONS.md`: ADRs. Add new decisions here; don't silently change direction.
 - `docs/FRONTEND.md`: **frontend contract and layering. Required reading before touching `web/`.**
+- `docs/MAVLINK.md`: **how every mission item, command and telemetry field maps onto ArduPlane / MAVLink2 (ADR-0017). Required reading before touching missions, commands, `domain/`, `protocol/` or the agent.**
 - `docs/OPEN_QUESTIONS.md`, `docs/BOM.md`
 
 ## Key facts
@@ -29,5 +30,6 @@ A fixed-wing **VTOL (ArduPlane QuadPlane)** that flies **autonomous missions onl
 - **Frontend is built first against `MockLink` (ADR-0009).** UI code (`features/`, `state/`) depends only on `domain/` types and the `VehicleLink` / `AuthClient` / `MissionRepository` interfaces. It never imports a concrete link, WebRTC, MAVLink or server details. Only `app/` wires up implementations. Every link implementation must pass the shared contract tests.
 - `protocol/` (zod, versioned envelope) is the single wire contract between the web app, the server and the agent. Change it deliberately and bump `v` on breaking changes.
 - Develop and test everything against SITL before hardware.
+- **ArduPilot and MAVLink are the reference for mission planning (ADR-0017).** Before adding or changing a mission item, command, telemetry field or planner behaviour, check `docs/MAVLINK.md` and add or update its row: which ArduPlane command or mode does it, or how we get it if there's none, and what happens if the companion computer dies. Don't build mission features ArduPlane can't fly on its own without an ADR. Where `MockLink` and ArduPlane SITL disagree, SITL is right; fix the mock.
 - Arm, start and mode changes need explicit UI confirmation and are audit-logged on the drone.
 - Never commit secrets (drone keys, signing keys, TURN secret, passwords, APN creds). Use `.env` (gitignored) plus `.env.example`.

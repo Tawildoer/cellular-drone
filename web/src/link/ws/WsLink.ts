@@ -1,4 +1,4 @@
-import type { Command, CommandResult, LinkStatus, Mission, VehicleEvent, VehicleState } from '../../domain'
+import type { Command, CommandResult, LinkStatus, Mission, MissionUploadResult, VehicleEvent, VehicleState } from '../../domain'
 import { createMessage, decodeMessage, encodeMessage, type Message } from '../../protocol'
 import type { Unsubscribe, VehicleLink } from '../VehicleLink'
 
@@ -88,11 +88,13 @@ export class WsLink implements VehicleLink {
     return reply && reply.type === 'cmd.result' ? reply.payload : { ok: false, reason: 'timeout' }
   }
 
-  async uploadMission(mission: Mission): Promise<CommandResult> {
+  async uploadMission(mission: Mission): Promise<MissionUploadResult> {
     if (!this.isOpen()) return { ok: false, reason: 'not_connected' }
 
     const reply = await this.request(createMessage('mission.upload', mission, { id: randomId() }))
-    return reply && reply.type === 'mission.uploaded' ? reply.payload.result : { ok: false, reason: 'timeout' }
+    return reply && reply.type === 'mission.uploaded'
+      ? { ...reply.payload.result, onVehicle: reply.payload.onVehicle }
+      : { ok: false, reason: 'timeout' }
   }
 
   async downloadMission(): Promise<Mission | null> {

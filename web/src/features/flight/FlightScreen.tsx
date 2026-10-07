@@ -4,6 +4,7 @@ import { CommandBar } from '../command-bar/CommandBar'
 import { PreflightChecklist } from '../checklist/PreflightChecklist'
 import { Button } from '../../components/ui/button'
 import type { GeoPoint } from '../../domain'
+import { FlightControllerMissionPanel } from '../mission-planner/FlightControllerMissionPanel'
 import { MissionItemListPanel } from '../mission-planner/MissionItemListPanel'
 import { MissionListPanel } from '../mission-planner/MissionListPanel'
 import { MissionValidationPanel } from '../mission-planner/MissionValidationPanel'
@@ -112,6 +113,7 @@ export function FlightScreen({ onBack }: { onBack: () => void }) {
         {planning && draft ? (
           <>
             <MissionValidationPanel mission={draft} />
+            <FlightControllerMissionPanel mission={draft} />
             {uploadError && (
               <div role="alert" className="glass-panel px-2.5 py-1.5">
                 <span className="hud-label" style={{ color: 'var(--status-critical)' }}>

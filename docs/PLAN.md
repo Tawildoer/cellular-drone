@@ -28,6 +28,8 @@ Order: **frontend first against a mock vehicle**, then the real backend undernea
 - [x] `services/`: `AuthClient` (mock) + `MissionRepository` (localStorage)
 - [ ] UI: login → vehicle list → flight screen (map, HUD, video, link badge, RC override banner, event log)
 - [ ] UI: mission planner (tap to add, VTOL takeoff/land items, inline validation, save and load)
+- [ ] Fence validation checks legs and loiter circles, not just item points (ADR-0017)
+- [x] Planner: ArduPilot mission panel (preview rows, issues, vehicle readback match) and `.waypoints` export (ADR-0017 addendum, 2026-10-07)
 - [ ] UI: preflight checklist gate + command bar with hold/slide-to-confirm
 - [ ] Dev panel for MockLink fault injection
 - [ ] Playwright smoke: login → plan → upload → arm → start → pause/resume → RTL
@@ -36,9 +38,14 @@ Order: **frontend first against a mock vehicle**, then the real backend undernea
 **Exit 1a:** the whole operator workflow is usable end to end against MockLink on phone and laptop.
 
 ### 1b: SITL + drone agent
+Do this before new planner features (ADR-0017). Mapping reference: `docs/MAVLINK.md`.
 - [ ] `sim/`: ArduPlane SITL in Docker with a QuadPlane frame. MAVLink exposed over TCP/UDP.
 - [ ] `agent/` (Go, Pion WebRTC):
   - [ ] MAVLink2 connection (serial or UDP) → map into `protocol/` messages (`VehicleState`, events). Mode mapping → app `FlightMode`.
+  - [x] Mission translation rules per `docs/MAVLINK.md`, as code: Go `agent/internal/mission` (authoritative) + TS preview `web/src/ardupilot`, both held to `testdata/mission-translation/` (2026-10-07)
+  - [ ] Wire `mission.Translate` into the agent's `mission.upload`: MAVLink upload with retries, readback into `onVehicle`, seq ↔ app index for `MISSION_CURRENT`, fence upload + `FENCE_ALT_MAX`, stored mission identity
+  - [ ] Decide clock-mode loiter (ADR-0017 open item)
+  - [ ] Fly the same missions in MockLink and SITL; tune the mock to SITL (waypoint reached, RTL altitude, turn radius, cruise speed)
   - [ ] Data channels: `telemetry` (unreliable) and `control` (reliable), carrying the **same `protocol/` v1 messages** as MockLink
   - [ ] Command whitelist and safety gate. Mission upload, download and verify state machine.
   - [ ] GCS heartbeat only while a commander session is alive (this drives the FC failsafe)

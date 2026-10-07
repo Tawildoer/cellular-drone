@@ -9,6 +9,8 @@ package protocol
 import (
 	"encoding/json"
 	"time"
+
+	"github.com/tomwildoer/cellular-drone/agent/internal/mission"
 )
 
 const Version = 1
@@ -136,4 +138,7 @@ type StatusEvent struct {
 type MissionUploaded struct {
 	MissionID string        `json:"missionId"`
 	Result    CommandResult `json:"result"`
+	// OnVehicle is the flight controller's readback after a successful
+	// upload, omitted when there is none (ADR-0017).
+	OnVehicle []mission.Row `json:"onVehicle,omitempty"`
 }

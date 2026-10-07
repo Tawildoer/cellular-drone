@@ -17,6 +17,13 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    fs: {
+      // The repo-level golden files (testdata/mission-translation) are shared
+      // with the Go agent, so the translator tests read them from outside web/.
+      allow: [__dirname, path.resolve(__dirname, '../testdata')],
+    },
+  },
   optimizeDeps: {
     // maplibre-gl's worker breaks under esbuild dep pre-bundling.
     exclude: ['maplibre-gl'],

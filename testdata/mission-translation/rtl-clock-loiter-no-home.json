@@ -1,0 +1,31 @@
+{
+  "description": "No home yet, a clock-mode loiter (no native equivalent, becomes LOITER_UNLIM), a waypoint with the default accept radius, RTL ending.",
+  "home": null,
+  "mission": {
+    "id": "golden-clock",
+    "name": "Clock loiter",
+    "createdAt": 0,
+    "updatedAt": 0,
+    "items": [
+      { "type": "vtolTakeoff", "altM": 60 },
+      { "type": "loiter", "lat": -37.85, "lon": 145.07, "altM": 90, "radiusM": 150, "untilUtcMinuteOfDay": 330 },
+      { "type": "waypoint", "lat": -37.855, "lon": 145.068, "altM": 80 },
+      { "type": "returnToLaunch" }
+    ]
+  },
+  "expected": {
+    "items": [
+      { "seq": 0, "command": 16, "frame": 0, "params": [0, 0, 0, 0], "lat": 0, "lon": 0, "altM": 0, "appIndex": null },
+      { "seq": 1, "command": 84, "frame": 3, "params": [0, 0, 0, 0], "lat": 0, "lon": 0, "altM": 60, "appIndex": 0 },
+      { "seq": 2, "command": 17, "frame": 3, "params": [0, 0, 150, 0], "lat": -37.85, "lon": 145.07, "altM": 90, "appIndex": 1 },
+      { "seq": 3, "command": 16, "frame": 3, "params": [0, 0, 0, 0], "lat": -37.855, "lon": 145.068, "altM": 80, "appIndex": 2 },
+      { "seq": 4, "command": 20, "frame": 3, "params": [0, 0, 0, 0], "lat": 0, "lon": 0, "altM": 0, "appIndex": 3 }
+    ],
+    "fence": [],
+    "params": {},
+    "issues": [
+      { "itemIndex": null, "code": "home_unknown", "severity": "info" },
+      { "itemIndex": 1, "code": "loiter_until_not_native", "severity": "warning" }
+    ]
+  }
+}

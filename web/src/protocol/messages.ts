@@ -4,6 +4,7 @@ import {
   commandSchema,
   missionSchema,
   vehicleEventSchema,
+  vehicleMissionItemSchema,
   vehicleStateSchema,
 } from './schemas'
 
@@ -14,6 +15,9 @@ const emptyPayloadSchema = z.object({}).strict()
 const missionUploadedPayloadSchema = z.object({
   missionId: z.string(),
   result: commandResultSchema,
+  /** What the flight controller holds after a successful upload, read back
+   * from it (ADR-0017). Optional: senders that predate it still parse. */
+  onVehicle: z.array(vehicleMissionItemSchema).optional(),
 })
 
 const videoConfigPayloadSchema = z.object({ preset: z.enum(['low', 'medium', 'high']) })

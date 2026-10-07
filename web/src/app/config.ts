@@ -3,7 +3,8 @@ import type { VehicleLink } from '../link'
 import { MockLink } from '../link/mock'
 import { WebRtcLink } from '../link/webrtc'
 import { WsLink } from '../link/ws'
-import type { AuthClient, MissionRepository } from '../services'
+import type { AuthClient, MissionRepository, MissionTranslator } from '../services'
+import { ArduPilotMissionTranslator } from '../services/ardupilot'
 import { LocalStorageMissionRepository } from '../services/local-storage'
 import { MockAuthClient } from '../services/mock'
 
@@ -66,6 +67,9 @@ export interface AppServices {
   resolveVehicleLink: (vehicleId: string) => VehicleLink
   vehicles: VehicleDescriptor[]
   missionRepository: MissionRepository
+  /** How missions look to the flight stack, for planner preview and export
+   * (ADR-0017). The agent does the authoritative translation on upload. */
+  missionTranslator: MissionTranslator
 }
 
 function iceServersFromEnv(): RTCIceServer[] | undefined {
@@ -114,5 +118,6 @@ export function createAppServices(): AppServices {
     resolveVehicleLink,
     vehicles: VEHICLES,
     missionRepository: new LocalStorageMissionRepository(),
+    missionTranslator: new ArduPilotMissionTranslator(),
   }
 }

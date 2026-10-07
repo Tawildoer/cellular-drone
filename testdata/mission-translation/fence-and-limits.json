@@ -1,0 +1,50 @@
+{
+  "description": "Values past ArduPilot's one-byte storage: accept radius > 255 m (clamped), > 255 laps (clamped), loiter radius 375 m (stored in tens, rounds down to 370), radius 3000 m (clamped to 2550). Plus a fence polygon and altitude ceiling.",
+  "home": { "lat": -37.861, "lon": 145.062, "altAmslM": 50 },
+  "mission": {
+    "id": "golden-limits",
+    "name": "Limits",
+    "createdAt": 0,
+    "updatedAt": 0,
+    "items": [
+      { "type": "vtolTakeoff", "altM": 50 },
+      { "type": "waypoint", "lat": -37.86, "lon": 145.06, "altM": 100, "acceptRadiusM": 300 },
+      { "type": "loiter", "lat": -37.858, "lon": 145.061, "altM": 100, "radiusM": 375, "turns": 300 },
+      { "type": "loiter", "lat": -37.857, "lon": 145.062, "altM": 100, "radiusM": 3000, "turns": 2 },
+      { "type": "returnToLaunch" }
+    ],
+    "fence": {
+      "polygon": [
+        { "lat": -37.87, "lon": 145.05 },
+        { "lat": -37.87, "lon": 145.08 },
+        { "lat": -37.85, "lon": 145.08 },
+        { "lat": -37.85, "lon": 145.05 }
+      ],
+      "maxAltM": 120
+    }
+  },
+  "expected": {
+    "items": [
+      { "seq": 0, "command": 16, "frame": 0, "params": [0, 0, 0, 0], "lat": -37.861, "lon": 145.062, "altM": 50, "appIndex": null },
+      { "seq": 1, "command": 84, "frame": 3, "params": [0, 0, 0, 0], "lat": 0, "lon": 0, "altM": 50, "appIndex": 0 },
+      { "seq": 2, "command": 16, "frame": 3, "params": [0, 255, 0, 0], "lat": -37.86, "lon": 145.06, "altM": 100, "appIndex": 1 },
+      { "seq": 3, "command": 18, "frame": 3, "params": [255, 0, 370, 1], "lat": -37.858, "lon": 145.061, "altM": 100, "appIndex": 2 },
+      { "seq": 4, "command": 18, "frame": 3, "params": [2, 0, 2550, 1], "lat": -37.857, "lon": 145.062, "altM": 100, "appIndex": 3 },
+      { "seq": 5, "command": 20, "frame": 3, "params": [0, 0, 0, 0], "lat": 0, "lon": 0, "altM": 0, "appIndex": 4 }
+    ],
+    "fence": [
+      { "seq": 0, "command": 5001, "frame": 0, "params": [4, 0, 0, 0], "lat": -37.87, "lon": 145.05, "altM": 0, "appIndex": null },
+      { "seq": 1, "command": 5001, "frame": 0, "params": [4, 0, 0, 0], "lat": -37.87, "lon": 145.08, "altM": 0, "appIndex": null },
+      { "seq": 2, "command": 5001, "frame": 0, "params": [4, 0, 0, 0], "lat": -37.85, "lon": 145.08, "altM": 0, "appIndex": null },
+      { "seq": 3, "command": 5001, "frame": 0, "params": [4, 0, 0, 0], "lat": -37.85, "lon": 145.05, "altM": 0, "appIndex": null }
+    ],
+    "params": { "FENCE_ALT_MAX": 120 },
+    "issues": [
+      { "itemIndex": 1, "code": "accept_radius_too_large", "severity": "error" },
+      { "itemIndex": 2, "code": "loiter_turns_too_many", "severity": "error" },
+      { "itemIndex": 2, "code": "loiter_radius_rounded", "severity": "info" },
+      { "itemIndex": 3, "code": "loiter_radius_too_large", "severity": "error" },
+      { "itemIndex": null, "code": "fence_separate_upload", "severity": "info" }
+    ]
+  }
+}

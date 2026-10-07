@@ -135,6 +135,19 @@ export const missionSchema = z.object({
   updatedAt: z.number(),
 })
 
+/** A raw flight-controller mission row, as read back after an upload
+ * (domain/vehicleMission.ts). */
+export const vehicleMissionItemSchema = z.object({
+  seq: z.number(),
+  command: z.number(),
+  frame: z.number(),
+  params: z.tuple([z.number(), z.number(), z.number(), z.number()]),
+  lat: z.number(),
+  lon: z.number(),
+  altM: z.number(),
+  appIndex: z.number().nullable(),
+})
+
 export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('arm') }),
   z.object({ type: z.literal('disarm') }),

@@ -2,7 +2,7 @@
 
 The UI is being built **first**, before the agent, server or hardware exist. To make sure that work isn't wasted if the backend architecture changes (WebRTC vs WebSocket relay, Go agent vs something else, MAVLink details), the frontend talks to the vehicle **only** through a small, app-owned contract.
 
-The UI knows nothing about WebRTC, MAVLink, WireGuard or the server topology.
+The UI knows nothing about WebRTC, MAVLink, WireGuard or the server topology. It doesn't import them, but what it lets the operator plan must be something ArduPlane can fly: every mission item and command has a mapping in `docs/MAVLINK.md` (ADR-0017). The planner previews the ArduPilot mission through the `MissionTranslator` service (`useMissionTranslator()`), never by importing `ardupilot/`.
 
 ## The layers
 

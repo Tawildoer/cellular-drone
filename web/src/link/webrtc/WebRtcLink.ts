@@ -1,4 +1,4 @@
-import type { Command, CommandResult, LinkState, LinkStatus, Mission, VehicleEvent, VehicleState } from '../../domain'
+import type { Command, CommandResult, LinkState, LinkStatus, Mission, MissionUploadResult, VehicleEvent, VehicleState } from '../../domain'
 import {
   createMessage,
   decodeMessage,
@@ -134,10 +134,12 @@ export class WebRtcLink implements VehicleLink {
     return reply && reply.type === 'cmd.result' ? reply.payload : { ok: false, reason: 'timeout' }
   }
 
-  async uploadMission(mission: Mission): Promise<CommandResult> {
+  async uploadMission(mission: Mission): Promise<MissionUploadResult> {
     const reply = await this.request(createMessage('mission.upload', mission, { id: randomId() }))
     if (reply === 'not_connected') return { ok: false, reason: 'not_connected' }
-    return reply && reply.type === 'mission.uploaded' ? reply.payload.result : { ok: false, reason: 'timeout' }
+    return reply && reply.type === 'mission.uploaded'
+      ? { ...reply.payload.result, onVehicle: reply.payload.onVehicle }
+      : { ok: false, reason: 'timeout' }
   }
 
   async downloadMission(): Promise<Mission | null> {

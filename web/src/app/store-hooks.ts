@@ -8,6 +8,8 @@ import type {
   VehicleStore,
   VehicleStoreState,
 } from '../state'
+import type { MissionTranslator } from '../services'
+import { ArduPilotMissionTranslator } from '../services/ardupilot'
 
 export interface AppStores {
   authStore: AuthStore
@@ -33,4 +35,12 @@ export function useVehicleStore<T>(selector: (s: VehicleStoreState) => T): T {
 
 export function useMissionStore<T>(selector: (s: MissionStoreState) => T): T {
   return useStore(useAppStores().missionStore, selector)
+}
+
+/** Provided from AppServices; the default lets feature tests render planner
+ * panels without wiring one up. */
+export const MissionTranslatorContext = createContext<MissionTranslator>(new ArduPilotMissionTranslator())
+
+export function useMissionTranslator(): MissionTranslator {
+  return useContext(MissionTranslatorContext)
 }

@@ -5,11 +5,13 @@ import type {
   GpsStatus,
   HomePosition,
   Mission,
+  MissionUploadResult,
   VehicleEvent,
   VehicleState,
   VideoPreset,
 } from '../../domain'
 import { validateMission } from '../../domain'
+import { translateMission } from '../../ardupilot'
 import {
   CRUISE_SPEED_MPS,
   deriveVtolState,
@@ -184,7 +186,9 @@ export class DroneEngine {
     }
   }
 
-  uploadMission(mission: Mission): CommandResult {
+  /** On success, also returns the ArduPilot rows a real flight controller
+   * would read back — the mock stands in for one (ADR-0017). */
+  uploadMission(mission: Mission): MissionUploadResult {
     if (isFlying(this.sim.phase)) {
       return { ok: false, reason: 'rejected_by_vehicle', detail: 'cannot change the mission while flying' }
     }
@@ -193,7 +197,7 @@ export class DroneEngine {
       return { ok: false, reason: 'rejected_by_vehicle', detail: validation.issues.map((i) => i.message).join('; ') }
     }
     this.mission = mission
-    return { ok: true }
+    return { ok: true, onVehicle: translateMission(mission, this.sim.home).items }
   }
 
   downloadMission(): Mission | null {

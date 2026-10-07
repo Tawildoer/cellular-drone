@@ -99,6 +99,23 @@ TURN is deferred, not dropped: coturn is not built now (Phase 1c step 3 is on ho
 - That CLI edited the repo: added `cloudflare()` to `web/vite.config.ts`; added `deploy`/`preview` scripts and `wrangler` + `@cloudflare/vite-plugin` devDeps to `web/package.json`; created `web/wrangler.jsonc`; extended `web/.gitignore` (`.wrangler`, `.dev.vars*`, `.env*`). We changed `wrangler.jsonc` `name` from the generated `web` to `cellular-drone` so redeploys stay on the same worker/URL.
 **Consequences:** The demo is a **per-device mock sandbox** — missions live in `localStorage` and state resets on reload, so it's not a shared live view and not a security boundary. Fine for showing the UI; revisit all of this (real auth, signalling, a live drone end) when the backend lands.
 
+## ADR-0017: ArduPilot and MAVLink are the reference for every mission and command feature (2026-10-07, accepted)
+**Context:** The frontend was built first against `MockLink` (ADR-0009), so mission planning (items, loiter modes, ETA, minimum radii, fence checks) has so far been shaped by the mock's physics, not by what ArduPlane executes. An assessment found the domain mostly maps onto ArduPlane mission commands, but with gaps: clock-mode loiter has no native command, waypoint-reached and RTL-altitude semantics differ from the mock, ArduPilot reserves seq 0 for home, it stores no mission id, its fence is vehicle-wide plus parameters, and validation only checks fence containment at item points.
+**Decision:**
+- `docs/MAVLINK.md` is the mapping reference from app vocabulary to ArduPlane / MAVLink2. A new mission item, command or telemetry field needs its row there (native command, or how we get the behaviour and what happens if the companion computer dies) **before** it is built. UI code still never imports MAVLink; this constrains meaning, not imports.
+- Path planning stays in the browser as pure `domain/` functions that produce plain mission items. Anything richer (survey grids, corridors, fence-aware routing) expands into native items before upload, so the FC can fly the whole mission with the agent, modem or browser gone.
+- ArduPlane SITL is the behavioural reference. Where the mock differs, tune the mock to match SITL.
+- `altM` is metres above home (`MAV_FRAME_GLOBAL_RELATIVE_ALT_INT`). The agent maps MAVLink seq to app item index (seq 0 = home) and keeps the uploaded `Mission` JSON for identity.
+**Open:** clock-mode loiter (ADR-0013). Options: the agent advances a `LOITER_UNLIM` at the time (simple, but the aircraft circles until battery failsafe if the companion dies), a Lua script on the FC (robust, needs an H743, not the F405, see ADR-0002), or rewriting the item to `LOITER_TIME` on arrival. Leaning Lua for the real aircraft, agent-driven in SITL until then.
+**Consequences:** Phase 1b (SITL + MAVLink in the agent) moves ahead of new planner features. Fence validation must check legs and loiter circles, not just points.
+
+**Addendum (2026-10-07): where the translation runs — hybrid.** Weighed translating on the drone against translating in the browser. On the drone keeps the agent's safety gate narrow (it accepts five app item types, never arbitrary MAVLink), lets it adapt to the FC's real params and firmware, and keeps the wire protocol in app vocabulary. In the browser gives instant planning feedback and offline export. So both, with one authority:
+- **Authoritative:** the agent's Go translator, `agent/internal/mission`. Only it produces what gets uploaded to the FC. It refuses unknown item types.
+- **Preview:** the browser's TypeScript translator, `web/src/ardupilot`, behind the `MissionTranslator` service (`services/`). It drives the planner's ArduPilot panel and the `.waypoints` export (QGC WPL 110, loads in Mission Planner, QGC and MAVProxy). `features/` and `state/` can't import `ardupilot/` (ESLint rule).
+- **Kept in lockstep** by golden files in `testdata/mission-translation/`, hand-written from ArduPilot's storage rules and run by both test suites.
+- **Readback wins:** `mission.uploaded` carries an optional `onVehicle` list, the FC's mission read back after upload (optional field, so `v` stays 1). The planner shows whether it matches the plan, and can show the vehicle's copy. `MockLink` / `mock-agent` fill it from the preview translator, standing in for an FC.
+- The readback is a raw row type in `domain/` (`VehicleMissionItem`), opaque to the UI: only the `MissionTranslator` interprets its numbers.
+
 ## Link test results (test matrix from `docs/P2P_TESTING.md`)
 Raw ICE detail lives in the agent's JSONL log and the browser console (`[WebRtcLink]`). NAT mapping measured with `agent/cmd/natcheck`.
 

@@ -28,8 +28,14 @@ const noConcreteLinkOrServiceImpls = [
       '**/services/http/**',
       '**/services/local-storage',
       '**/services/local-storage/**',
+      '**/services/ardupilot',
+      '**/services/ardupilot/**',
     ],
     message: 'features/ and state/ must depend on service interfaces (AuthClient, MissionRepository), not a concrete implementation. Only app/ may wire up implementations.',
+  },
+  {
+    group: ['**/ardupilot', '**/ardupilot/**'],
+    message: 'features/ and state/ never touch MAVLink or ArduPilot details: use the MissionTranslator service (useMissionTranslator). See ADR-0017.',
   },
 ]
 

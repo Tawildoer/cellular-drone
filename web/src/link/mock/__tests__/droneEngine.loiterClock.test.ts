@@ -31,7 +31,7 @@ describe('DroneEngine clock-mode loiter', () => {
   it('ends by the real wall clock, not sim time — sped-up sim time must not make it leave early', () => {
     const engine = new DroneEngine({ home: HOME })
     engine.connect('d1')
-    expect(engine.uploadMission(clockLoiterMission(12 * 60 + 10))).toEqual({ ok: true }) // until 12:10 UTC
+    expect(engine.uploadMission(clockLoiterMission(12 * 60 + 10))).toMatchObject({ ok: true }) // until 12:10 UTC
     engine.applyCommand({ type: 'arm' })
     engine.applyCommand({ type: 'mission.start' })
     const phase = () => (engine as unknown as { sim: { phase: string } }).sim.phase

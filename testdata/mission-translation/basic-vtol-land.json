@@ -1,0 +1,28 @@
+{
+  "description": "Takeoff, waypoint with accept radius, counted loiter, VTOL land at a point. Everything native.",
+  "home": { "lat": -37.861, "lon": 145.062, "altAmslM": 50 },
+  "mission": {
+    "id": "golden-basic",
+    "name": "Basic",
+    "createdAt": 0,
+    "updatedAt": 0,
+    "items": [
+      { "type": "vtolTakeoff", "altM": 40 },
+      { "type": "waypoint", "lat": -37.86, "lon": 145.063, "altM": 60, "acceptRadiusM": 25 },
+      { "type": "loiter", "lat": -37.858, "lon": 145.065, "altM": 70, "radiusM": 80, "turns": 3 },
+      { "type": "vtolLand", "lat": -37.861, "lon": 145.062 }
+    ]
+  },
+  "expected": {
+    "items": [
+      { "seq": 0, "command": 16, "frame": 0, "params": [0, 0, 0, 0], "lat": -37.861, "lon": 145.062, "altM": 50, "appIndex": null },
+      { "seq": 1, "command": 84, "frame": 3, "params": [0, 0, 0, 0], "lat": 0, "lon": 0, "altM": 40, "appIndex": 0 },
+      { "seq": 2, "command": 16, "frame": 3, "params": [0, 25, 0, 0], "lat": -37.86, "lon": 145.063, "altM": 60, "appIndex": 1 },
+      { "seq": 3, "command": 18, "frame": 3, "params": [3, 0, 80, 1], "lat": -37.858, "lon": 145.065, "altM": 70, "appIndex": 2 },
+      { "seq": 4, "command": 85, "frame": 3, "params": [0, 0, 0, 0], "lat": -37.861, "lon": 145.062, "altM": 0, "appIndex": 3 }
+    ],
+    "fence": [],
+    "params": {},
+    "issues": []
+  }
+}

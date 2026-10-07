@@ -1,5 +1,15 @@
 import { createStore } from 'zustand/vanilla'
-import type { Command, CommandResult, LinkState, LinkStatus, Mission, VehicleEvent, VehicleState } from '../domain'
+import type {
+  Command,
+  CommandResult,
+  LinkState,
+  LinkStatus,
+  Mission,
+  MissionUploadResult,
+  VehicleEvent,
+  VehicleMissionItem,
+  VehicleState,
+} from '../domain'
 import type { VehicleLink } from '../link'
 import { appendLinkHistory, type LinkHistoryPoint } from './linkHistory'
 
@@ -18,6 +28,9 @@ export interface VehicleStoreState {
   /** The mission the vehicle last *accepted* — what it will actually fly,
    * as opposed to whatever is being edited or was merely saved locally. */
   missionOnVehicle: Mission | null
+  /** The flight controller's own copy of `missionOnVehicle`, read back after
+   * the upload, when the vehicle reports one (ADR-0017). Null when unknown. */
+  missionOnVehicleReadback: VehicleMissionItem[] | null
   /** The link backing the current connection, or null when disconnected.
    * App-level wiring (e.g. dev tools) reads this; features use the methods. */
   activeLink: VehicleLink | null
@@ -25,7 +38,7 @@ export interface VehicleStoreState {
   connect(vehicleId: string): Promise<void>
   disconnect(): Promise<void>
   send(cmd: Command): Promise<CommandResult>
-  uploadMission(mission: Mission): Promise<CommandResult>
+  uploadMission(mission: Mission): Promise<MissionUploadResult>
   downloadMission(): Promise<Mission | null>
 }
 
@@ -50,6 +63,7 @@ export function createVehicleStore(linkOrResolver: VehicleLink | VehicleLinkReso
     events: [],
     videoStream: null,
     missionOnVehicle: null,
+    missionOnVehicleReadback: null,
     activeLink: null,
 
     async connect(vehicleId) {
@@ -73,7 +87,8 @@ export function createVehicleStore(linkOrResolver: VehicleLink | VehicleLinkReso
       // mid-mission (e.g. the auto-flying demo drone) shows its actual route,
       // not an empty map.
       const current = await link.downloadMission()
-      if (current) set({ missionOnVehicle: current })
+      // A downloaded mission comes without a readback; drop any stale one.
+      if (current) set({ missionOnVehicle: current, missionOnVehicleReadback: null })
     },
 
     async disconnect() {
@@ -88,7 +103,8 @@ export function createVehicleStore(linkOrResolver: VehicleLink | VehicleLinkReso
         linkHistory: [],
         videoStream: null,
         missionOnVehicle: null,
-            activeLink: null,
+        missionOnVehicleReadback: null,
+        activeLink: null,
       })
     },
 
@@ -96,7 +112,7 @@ export function createVehicleStore(linkOrResolver: VehicleLink | VehicleLinkReso
     async uploadMission(mission) {
       if (!link) return { ok: false, reason: 'not_connected' }
       const result = await link.uploadMission(mission)
-      if (result.ok) set({ missionOnVehicle: mission })
+      if (result.ok) set({ missionOnVehicle: mission, missionOnVehicleReadback: result.onVehicle ?? null })
       return result
     },
     downloadMission: () => (link ? link.downloadMission() : Promise.resolve(null)),

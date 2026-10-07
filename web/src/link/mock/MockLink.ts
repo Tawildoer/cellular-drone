@@ -1,4 +1,4 @@
-import type { Command, CommandResult, HomePosition, LinkStatus, Mission, VehicleEvent, VehicleState } from '../../domain'
+import type { Command, CommandResult, HomePosition, LinkStatus, Mission, MissionUploadResult, VehicleEvent, VehicleState } from '../../domain'
 import { createMessage, decodeMessage, encodeMessage } from '../../protocol'
 import type { Unsubscribe, VehicleLink } from '../VehicleLink'
 import { DroneEngine, type FaultInjectionConfig } from './droneEngine'
@@ -134,7 +134,7 @@ export class MockLink implements VehicleLink {
     return decodedRes && decodedRes.type === 'cmd.result' ? decodedRes.payload : result
   }
 
-  async uploadMission(mission: Mission): Promise<CommandResult> {
+  async uploadMission(mission: Mission): Promise<MissionUploadResult> {
     if (!this.connectedAtMs) return { ok: false, reason: 'not_connected' }
 
     const fault = this.engine.getFaultConfig()
@@ -146,7 +146,13 @@ export class MockLink implements VehicleLink {
       return { ok: false, reason: 'rejected_by_vehicle', detail: 'malformed mission' }
     }
 
-    return this.engine.uploadMission(decoded.payload)
+    // Round-trip the reply too, so the readback is held to the wire schema.
+    const result = this.engine.uploadMission(decoded.payload)
+    const { onVehicle, ...commandResult } = result
+    const reply = decodeMessage(
+      encodeMessage(createMessage('mission.uploaded', { missionId: decoded.payload.id, result: commandResult, onVehicle })),
+    )
+    return reply && reply.type === 'mission.uploaded' ? { ...reply.payload.result, onVehicle: reply.payload.onVehicle } : result
   }
 
   async downloadMission(): Promise<Mission | null> {

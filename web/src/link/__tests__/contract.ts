@@ -149,6 +149,21 @@ export function runVehicleLinkContractTests(name: string, opts: VehicleLinkContr
       await link.disconnect()
     })
 
+    it('a flight-controller readback, when given, accounts for every planned item in order', async () => {
+      const link = opts.createLink()
+      await link.connect(vehicleId)
+      const mission = sampleMission()
+
+      const result = await link.uploadMission(mission)
+      expect(result.ok).toBe(true)
+      if (result.onVehicle) {
+        const appIndices = result.onVehicle.map((row) => row.appIndex).filter((i) => i !== null)
+        expect(appIndices).toEqual(mission.items.map((_, i) => i))
+      }
+
+      await link.disconnect()
+    })
+
     it('exposes a video subscription that can be unsubscribed without throwing', async () => {
       const link = opts.createLink()
       const unsubscribe = link.onVideoStream(() => {})
