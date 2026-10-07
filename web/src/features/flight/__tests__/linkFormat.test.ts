@@ -37,4 +37,18 @@ describe('formatLinkBadge', () => {
   it('falls back to Connected when path is unknown', () => {
     expect(formatLinkBadge({ state: 'connected', path: 'unknown' })).toMatchObject({ label: 'Connected' })
   })
+
+  it('adds the IP version to the detail when known', () => {
+    expect(formatLinkBadge({ state: 'connected', path: 'direct', rttMs: 45, ipVersion: 6 })).toMatchObject({ detail: '45 ms · IPv6' })
+  })
+
+  it('turns critical when latency is poor, even though the link is up', () => {
+    expect(formatLinkBadge({ state: 'connected', path: 'direct', rttMs: 600 })).toMatchObject({ status: 'critical' })
+  })
+})
+
+describe('formatLinkBadge and video', () => {
+  it('stays good on low latency even when the video feed is poor (the video badge covers that)', () => {
+    expect(formatLinkBadge({ state: 'connected', path: 'direct', rttMs: 45, videoFps: 5 })).toMatchObject({ status: 'good' })
+  })
 })

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +30,13 @@ type Config struct {
 	// Interface restricts ICE to one network interface (e.g. wlan0). Empty =
 	// every interface except VPN/tunnel ones, which would otherwise offer
 	// their own private P2P path and silently bypass the network under test.
-	Interface              string
+	Interface string
+	// UDPPort, when set, serves all ICE traffic from this one UDP port, so a
+	// router can forward it. AdvertiseIPs are public IPs to offer on that
+	// same port as server-reflexive candidates: STUN can't discover them,
+	// because its own probes leave from other ports the router doesn't forward.
+	UDPPort                int
+	AdvertiseIPs           []string
 	ICEDisconnectedTimeout time.Duration
 	ICEFailedTimeout       time.Duration
 	ICEKeepalive           time.Duration
@@ -61,6 +68,16 @@ func NewManager(cfg Config, videoSource *video.Source, send SendFunc, log *slog.
 		}
 		return !isTunnelInterface(name)
 	})
+	if cfg.UDPPort > 0 {
+		conn, err := net.ListenUDP("udp", &net.UDPAddr{Port: cfg.UDPPort})
+		if err != nil {
+			return nil, fmt.Errorf("listen on udp port %d: %w", cfg.UDPPort, err)
+		}
+		settings.SetICEUDPMux(webrtc.NewICEUDPMux(nil, conn))
+	}
+	if len(cfg.AdvertiseIPs) > 0 {
+		settings.SetNAT1To1IPs(cfg.AdvertiseIPs, webrtc.ICECandidateTypeSrflx)
+	}
 
 	media := &webrtc.MediaEngine{}
 	if err := media.RegisterDefaultCodecs(); err != nil {

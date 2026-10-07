@@ -25,21 +25,26 @@ import (
 
 // A live test pattern with the wall clock burned in, so glass-to-glass
 // latency can be read straight off the browser's video. Constrained baseline
-// decodes in every browser.
+// decodes in every browser. The pipeline packetises its own RTP to the agent
+// (see package video); config-interval=-1 repeats SPS/PPS with every
+// keyframe so a viewer can start decoding mid-stream.
 const defaultVideoCmd = "gst-launch-1.0 -q videotestsrc is-live=true pattern=ball " +
 	"! video/x-raw,width=1280,height=720,framerate=30/1 " +
 	"! clockoverlay time-format=%H:%M:%S " +
 	"! x264enc tune=zerolatency speed-preset=ultrafast bitrate=1500 key-int-max=30 " +
-	"! video/x-h264,profile=constrained-baseline,stream-format=byte-stream " +
-	"! fdsink fd=1"
+	"! video/x-h264,profile=constrained-baseline " +
+	"! rtph264pay config-interval=-1 pt=96 mtu=1200 " +
+	"! udpsink host=127.0.0.1 port=" + video.PortPlaceholder
 
 func main() {
 	signalURL := flag.String("signal", "ws://localhost:8788/signal", "signalling server WebSocket URL")
 	vehicleID := flag.String("vehicle", "drone-1", "vehicle id the browser connects to")
 	stun := flag.String("stun", "stun:stun.l.google.com:19302", "comma-separated STUN/TURN URLs (empty = host candidates only)")
 	iface := flag.String("iface", "", "restrict ICE to this interface, e.g. wlan0 (default: all but VPN/tunnel interfaces)")
-	videoCmd := flag.String("video-cmd", defaultVideoCmd, "shell command writing Annex-B H.264 to stdout (empty = no video)")
-	fps := flag.Int("fps", 30, "frame rate of the video command's output")
+	udpPort := flag.Int("udp-port", 0, "serve all ICE traffic from this one UDP port, e.g. for a router port forward (0 = random ports)")
+	advertiseIP := flag.String("advertise-ip", "", "comma-separated public IPs to offer on -udp-port (the router's public address when forwarding)")
+	videoCmd := flag.String("video-cmd", defaultVideoCmd, "encoder command sending H.264 RTP to 127.0.0.1:{port} (empty = no video)")
+	videoPort := flag.Int("video-port", 5004, "local UDP port the encoder sends RTP to")
 	logPath := flag.String("log", "-", "JSONL log file (- = stdout)")
 	homeLat := flag.Float64("home-lat", -37.861, "reported home latitude")
 	homeLon := flag.Float64("home-lon", 145.062, "reported home longitude")
@@ -66,7 +71,7 @@ func main() {
 	var videoSource *video.Source
 	if *videoCmd != "" {
 		var err error
-		if videoSource, err = video.NewSource(*videoCmd, *fps, log); err != nil {
+		if videoSource, err = video.NewSource(*videoCmd, *videoPort, log); err != nil {
 			log.Error("video_init_failed", "error", err.Error())
 			os.Exit(1)
 		}
@@ -78,6 +83,8 @@ func main() {
 		Home:                   protocol.HomePosition{Lat: *homeLat, Lon: *homeLon},
 		ICEServers:             iceServers(*stun),
 		Interface:              *iface,
+		UDPPort:                *udpPort,
+		AdvertiseIPs:           splitList(*advertiseIP),
 		ICEDisconnectedTimeout: *iceDisconnected,
 		ICEFailedTimeout:       *iceFailed,
 		ICEKeepalive:           *iceKeepalive,
@@ -107,10 +114,18 @@ func main() {
 
 func iceServers(urls string) []webrtc.ICEServer {
 	var servers []webrtc.ICEServer
-	for _, url := range strings.Split(urls, ",") {
-		if url = strings.TrimSpace(url); url != "" {
-			servers = append(servers, webrtc.ICEServer{URLs: []string{url}})
-		}
+	for _, url := range splitList(urls) {
+		servers = append(servers, webrtc.ICEServer{URLs: []string{url}})
 	}
 	return servers
+}
+
+func splitList(csv string) []string {
+	var out []string
+	for _, item := range strings.Split(csv, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { summariseStats, videoKbps, type StatsEntry } from '../linkStats'
+import { packetLossPct, summariseStats, videoKbps, type StatsEntry } from '../linkStats'
 
 function report(localType: string, remoteType: string, extra: StatsEntry[] = []): StatsEntry[] {
   return [
@@ -51,5 +51,43 @@ describe('videoKbps', () => {
     const next = summariseStats(report('host', 'host', [video(1000, 2000)]))
     expect(videoKbps(null, next)).toBeUndefined()
     expect(videoKbps(summariseStats(report('host', 'host')), summariseStats(report('host', 'host')))).toBeUndefined()
+  })
+})
+
+describe('video health and IP version', () => {
+  const inbound = (packetsReceived: number, packetsLost: number): StatsEntry => ({
+    id: 'V',
+    type: 'inbound-rtp',
+    kind: 'video',
+    packetsReceived,
+    packetsLost,
+    framesPerSecond: 29.97,
+    jitter: 0.0123,
+    freezeCount: 2,
+    totalFreezesDuration: 1.4,
+  })
+
+  it('reads frame rate, jitter (ms) and freezes from inbound video', () => {
+    const sample = summariseStats([inbound(100, 0)])
+    expect(sample).toMatchObject({ videoFps: 29.97, jitterMs: 12, freezeCount: 2, freezeSeconds: 1.4 })
+  })
+
+  it('computes packet loss between samples as a share of packets expected', () => {
+    const prev = summariseStats([inbound(1000, 10)])
+    const next = summariseStats([inbound(1990, 20)]) // 990 received + 10 lost in between
+    expect(packetLossPct(prev, next)).toBe(1)
+  })
+
+  it('has no loss figure when no packets were expected in between', () => {
+    const sample = summariseStats([inbound(1000, 10)])
+    expect(packetLossPct(sample, sample)).toBeUndefined()
+    expect(packetLossPct(null, sample)).toBeUndefined()
+  })
+
+  it('takes the IP version from the remote candidate address', () => {
+    const v6 = report('host', 'host').map((e) => (e.id === 'R1' ? { ...e, address: '2001:db8::10' } : e))
+    const v4 = report('host', 'srflx').map((e) => (e.id === 'R1' ? { ...e, address: '203.0.113.10' } : e))
+    expect(summariseStats(v6).ipVersion).toBe(6)
+    expect(summariseStats(v4).ipVersion).toBe(4)
   })
 })

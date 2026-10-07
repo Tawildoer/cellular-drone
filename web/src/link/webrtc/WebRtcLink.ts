@@ -10,7 +10,7 @@ import {
   type SignallingMessage,
 } from '../../protocol'
 import type { Unsubscribe, VehicleLink } from '../VehicleLink'
-import { summariseStats, videoKbps, type LinkSample, type StatsEntry } from './linkStats'
+import { packetLossPct, summariseStats, videoKbps, type LinkSample, type StatsEntry } from './linkStats'
 
 export interface WebRtcLinkOptions {
   signalUrl?: string
@@ -339,14 +339,17 @@ export class WebRtcLink implements VehicleLink {
     const report = await pc.getStats()
     const sample = summariseStats(report.values() as Iterable<StatsEntry>)
     const kbps = videoKbps(this.lastSample, sample)
+    const lossPct = packetLossPct(this.lastSample, sample)
     if (sample.pairKinds && sample.pairKinds !== this.lastSample?.pairKinds) {
-      console.info(`[WebRtcLink] selected pair ${sample.pairKinds} (${sample.path})`)
+      console.info(`[WebRtcLink] selected pair ${sample.pairKinds} (${sample.path}, IPv${sample.ipVersion ?? '?'})`)
     }
     this.lastSample = sample
-    this.refreshStatus(kbps)
+    this.refreshStatus(kbps, lossPct)
   }
 
-  private refreshStatus(kbps?: number): void {
+  /** kbps and lossPct are per-interval figures, only known when stats were
+   * just polled; between polls the last ones carry over. */
+  private refreshStatus(kbps?: number, lossPct?: number): void {
     const pc = this.pc
     let state: LinkState = 'connecting'
     if (pc?.connectionState === 'connected' && this.control?.readyState === 'open') {
@@ -355,12 +358,20 @@ export class WebRtcLink implements VehicleLink {
     } else if (pc?.connectionState === 'disconnected') {
       state = 'degraded'
     }
+    const sample = this.lastSample
     this.setStatus({
       state,
-      path: this.lastSample?.path,
-      rttMs: this.lastSample?.rttMs,
+      path: sample?.path,
+      rttMs: sample?.rttMs,
       videoKbps: kbps ?? this.status.videoKbps,
       lastTelemetryAt: this.lastTelemetryAt,
+      ipVersion: sample?.ipVersion,
+      pairKinds: sample?.pairKinds,
+      videoFps: sample?.videoFps,
+      packetLossPct: lossPct ?? this.status.packetLossPct,
+      jitterMs: sample?.jitterMs,
+      videoFreezeCount: sample?.freezeCount,
+      videoFreezeSeconds: sample?.freezeSeconds,
     })
   }
 

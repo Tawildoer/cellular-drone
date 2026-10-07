@@ -3,6 +3,7 @@ import { useVehicleStore } from '../../app/store-hooks'
 import { StatTile } from '../../components/StatTile'
 import { batteryIcon, batteryStatus, formatHeadingDeg, gpsFixLabel, gpsStatus, vtolStateLabel } from './hudFormat'
 import { formatLinkBadge } from './linkFormat'
+import { LinkStrengthTile } from './LinkStrengthTile'
 
 export function HudStrip() {
   const vehicleState = useVehicleStore((s) => s.vehicleState)
@@ -22,6 +23,7 @@ export function HudStrip() {
   return (
     <div className="glass-panel flex gap-1.5 overflow-x-auto px-2 py-2">
       <StatTile label="Link" value={link.label} detail={link.detail} icon={Radio} status={link.status} />
+      <LinkStrengthTile />
       <StatTile label="Flight mode" value={vehicleState.flightMode} />
       <StatTile
         label="Armed"

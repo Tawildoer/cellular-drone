@@ -1,6 +1,7 @@
 import { createStore } from 'zustand/vanilla'
 import type { Command, CommandResult, LinkState, LinkStatus, Mission, VehicleEvent, VehicleState } from '../domain'
 import type { VehicleLink } from '../link'
+import { appendLinkHistory, type LinkHistoryPoint } from './linkHistory'
 
 const MAX_EVENTS = 200
 
@@ -10,6 +11,8 @@ export interface VehicleStoreState {
   connectionState: LinkState
   vehicleState: VehicleState | null
   linkStatus: LinkStatus | null
+  /** The last minute of link quality, one point per second. */
+  linkHistory: LinkHistoryPoint[]
   events: VehicleEvent[]
   videoStream: MediaStream | null
   /** The mission the vehicle last *accepted* — what it will actually fly,
@@ -43,6 +46,7 @@ export function createVehicleStore(linkOrResolver: VehicleLink | VehicleLinkReso
     connectionState: 'disconnected',
     vehicleState: null,
     linkStatus: null,
+    linkHistory: [],
     events: [],
     videoStream: null,
     missionOnVehicle: null,
@@ -53,7 +57,13 @@ export function createVehicleStore(linkOrResolver: VehicleLink | VehicleLinkReso
       link = resolve(vehicleId)
       unsubscribers = [
         link.onState((vehicleState) => set({ vehicleState })),
-        link.onLinkStatus((linkStatus) => set({ linkStatus, connectionState: linkStatus.state })),
+        link.onLinkStatus((linkStatus) =>
+          set((s) => ({
+            linkStatus,
+            connectionState: linkStatus.state,
+            linkHistory: appendLinkHistory(s.linkHistory, linkStatus, Date.now()),
+          })),
+        ),
         link.onEvent((event) => set((s) => ({ events: [...s.events, event].slice(-MAX_EVENTS) }))),
         link.onVideoStream((videoStream) => set({ videoStream })),
       ]
@@ -75,9 +85,10 @@ export function createVehicleStore(linkOrResolver: VehicleLink | VehicleLinkReso
         connectionState: 'disconnected',
         vehicleState: null,
         linkStatus: null,
+        linkHistory: [],
         videoStream: null,
         missionOnVehicle: null,
-        activeLink: null,
+            activeLink: null,
       })
     },
 

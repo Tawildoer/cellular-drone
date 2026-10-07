@@ -11,6 +11,7 @@ import { insertWaypoint, skeletonItems } from '../mission-planner/missionEdit'
 import { EventLogPopout } from './EventLogPopout'
 import { FlightPiP } from './FlightPiP'
 import { HudStrip } from './HudStrip'
+import { LinkQualityPopout } from './LinkQualityPopout'
 import { MissionSelector } from './MissionSelector'
 import { RcOverrideBanner } from './RcOverrideBanner'
 import { useFlightMission } from './useFlightMission'
@@ -86,6 +87,7 @@ export function FlightScreen({ onBack }: { onBack: () => void }) {
             <>
               <MissionSelector />
               <EventLogPopout />
+              <LinkQualityPopout />
             </>
           )}
         </div>
