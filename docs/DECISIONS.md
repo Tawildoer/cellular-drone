@@ -164,7 +164,7 @@ TURN is deferred, not dropped: coturn is not built now (Phase 1c step 3 is on ho
 - Still protected without the link: battery failsafe, geofence, RC pilot. The cost: an aircraft whose operator vanished mid-pause keeps loitering for up to 120 s before carrying on with the mission.
 - Two scripts are now required on the FC (`loiter_until.lua`, `pause_resume.lua`), which needs an H7 board (ADR-0002).
 - The agent's arm still switches RTL/QRTL/QLAND to QLOITER first: the FC is left in QRTL after any RTL landing.
-- Not yet verified in SITL: that an RC pilot's LOITER isn't time-limited. The test helper (`cmd/sitlpilot`) changes modes over MAVLink, which looks like a ground-station command, so testing this needs real RC input in SITL.
+- Not yet verified in SITL: that an RC pilot's LOITER isn't time-limited. Possible since 2026-10-08: `cmd/sitlpilot -switch LOITER` moves SITL's simulated mode switch (mode reason `RC_COMMAND`), where `-mode` looked like a ground-station command.
 
 ## Link test results (test matrix from `docs/P2P_TESTING.md`)
 Raw ICE detail lives in the agent's JSONL log and the browser console (`[WebRtcLink]`). NAT mapping measured with `agent/cmd/natcheck`.

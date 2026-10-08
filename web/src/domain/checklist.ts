@@ -41,6 +41,14 @@ export function evaluatePreflight(
     { id: 'missionValid', label: 'Mission passes validation', passed: missionValid },
     { id: 'noFailsafe', label: 'No active failsafe', passed: noFailsafe },
     { id: 'rcLinked', label: 'RC link present', passed: state.rc.linked },
+    // Unknown passes here: the vehicle checks it again on start.
+    {
+      id: 'rcSwitchAuto',
+      label: state.rc.modeSwitch && state.rc.modeSwitch !== 'AUTO'
+        ? `RC mode switch at AUTO (now ${state.rc.modeSwitch})`
+        : 'RC mode switch at AUTO',
+      passed: state.rc.modeSwitch === undefined || state.rc.modeSwitch === 'AUTO',
+    },
   ]
 
   return { ready: items.every((item) => item.passed), items }

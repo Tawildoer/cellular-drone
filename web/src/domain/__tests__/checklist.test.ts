@@ -73,4 +73,19 @@ describe('evaluatePreflight', () => {
     expect(result.ready).toBe(false)
     expect(result.items.find((i) => i.id === 'rcLinked')?.passed).toBe(false)
   })
+
+  it('fails when the RC mode switch is off AUTO, and says where it is', () => {
+    const result = evaluatePreflight(state({ rc: { linked: true, overrideActive: false, modeSwitch: 'FBWA' } }), validMission)
+    expect(result.ready).toBe(false)
+    const item = result.items.find((i) => i.id === 'rcSwitchAuto')
+    expect(item?.passed).toBe(false)
+    expect(item?.label).toContain('FBWA')
+  })
+
+  it('passes the switch check at AUTO, or when the vehicle does not report it', () => {
+    for (const modeSwitch of ['AUTO', undefined] as const) {
+      const result = evaluatePreflight(state({ rc: { linked: true, overrideActive: false, modeSwitch } }), validMission)
+      expect(result.items.find((i) => i.id === 'rcSwitchAuto')?.passed).toBe(true)
+    }
+  })
 })

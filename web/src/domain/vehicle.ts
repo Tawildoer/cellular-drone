@@ -56,6 +56,10 @@ export interface MissionProgress {
 export interface RcStatus {
   linked: boolean
   overrideActive: boolean
+  /** The mode the radio's mode switch selects; absent when unknown (no RC
+   * link, or the vehicle doesn't report it). Missions start only with it at
+   * AUTO, and moving it off AUTO is a takeover (ADR-0008). */
+  modeSwitch?: FlightMode
 }
 
 export interface FailsafeFlags {

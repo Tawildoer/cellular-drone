@@ -27,6 +27,16 @@ WP_LOITER_RAD   60
 WP_RADIUS       30
 RTL_ALTITUDE    60
 
+# RC mode switch (ADR-0008): missions start only with it at AUTO, and
+# moving it off AUTO is a takeover. SITL's simulated radio holds the switch
+# channel (FLTMODE_CH 5) at 1800 µs, position 6, so that position is AUTO.
+# The FC boots into AUTO disarmed; the agent's arm goes through QLOITER.
+FLTMODE6        10
+# Test helper only (agent/cmd/sitlpilot -switch): RC overrides from it hold
+# until released instead of lapsing after 3 s, like a switch left in place.
+# Nothing in the real system sends RC overrides (CLAUDE.md).
+RC_OVERRIDE_TIME -1
+
 # Fence: off until the agent uploads one with a mission (ADR-0017).
 FENCE_ENABLE    0
 

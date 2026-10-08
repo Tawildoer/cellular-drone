@@ -78,20 +78,32 @@ type Link struct {
 	// Serialises mission transfers: the protocol is one exchange at a time.
 	transferMu sync.Mutex
 
-	mu    sync.Mutex
-	st    vehicleState
-	plan  *plannedMission // what the FC holds, as the app knows it
-	ready bool            // first heartbeat seen and streams requested
+	mu         sync.Mutex
+	st         vehicleState
+	plan       *plannedMission // what the FC holds, as the app knows it
+	ready      bool            // first heartbeat seen and streams requested
+	modeSwitch *modeSwitch     // the FC's RC mode switch setup; nil until read
+}
+
+// modeSwitch is the FC's RC mode switch: FLTMODE_CH and FLTMODE1..6.
+type modeSwitch struct {
+	channel int // 1-based RC channel
+	modes   [6]uint32
 }
 
 type vehicleState struct {
 	protocol.VehicleState
-	fcSystem    uint8
-	mode        uint32
-	haveMode    bool
-	commanded   *uint32 // last mode the agent asked for, to tell RC takeovers apart
-	rcPresent   bool
-	gpsTimeUnix time.Time
+	fcSystem  uint8
+	mode      uint32
+	haveMode  bool
+	commanded *uint32 // last mode the agent asked for, to tell RC takeovers apart
+	// inferredOverride: the FC entered a pilot mode the agent didn't ask
+	// for. switchMode: the mode the RC switch selects, nil when unknown.
+	// Either one, while armed, is an RC override (updateOverrideLocked).
+	inferredOverride bool
+	switchMode       *uint32
+	rcPresent        bool
+	gpsTimeUnix      time.Time
 }
 
 type plannedMission struct {
@@ -149,7 +161,11 @@ func (l *Link) Run(ctx context.Context) {
 				// so forget the mode history rather than compare against it.
 				l.st.haveMode = false
 				l.st.commanded = nil
+				l.st.inferredOverride = false
+				l.st.switchMode = nil
+				l.st.RC.ModeSwitch = ""
 				l.st.RC.OverrideActive = false
+				l.modeSwitch = nil // re-read: it may be a different FC
 				l.mu.Unlock()
 			case *gomavlib.EventFrame:
 				if e.ComponentID() != autopilotComp {
@@ -229,14 +245,13 @@ func (l *Link) handle(ctx context.Context, sysID uint8, msg message.Message) {
 		}
 		s.fcSystem = sysID
 		s.Armed = m.BaseMode&common.MAV_MODE_FLAG_SAFETY_ARMED != 0
-		if !s.Armed && s.RC.OverrideActive {
-			// Disarmed on the ground: nothing for the pilot to hold.
-			s.RC.OverrideActive = false
-			events = append(events, protocol.RCOverrideEvent{Kind: "rcOverride", Active: false, TS: now})
+		if !s.Armed {
+			s.inferredOverride = false // disarmed: nothing for the pilot to hold
 		}
 		if !s.haveMode || s.mode != m.CustomMode {
 			events = append(events, l.modeChangedLocked(m.CustomMode, now)...)
 		}
+		events = append(events, l.updateOverrideLocked(now)...)
 		if !l.ready {
 			l.ready = true
 			go l.requestStreams(ctx)
@@ -267,6 +282,14 @@ func (l *Link) handle(ctx context.Context, sysID uint8, msg message.Message) {
 		s.rcPresent = m.OnboardControlSensorsPresent&rc != 0
 		s.RC.Linked = s.rcPresent && m.OnboardControlSensorsHealth&rc != 0
 		events = append(events, l.setFailsafeLocked("rc", s.rcPresent && !s.RC.Linked, now)...)
+		if !s.RC.Linked {
+			// Out of range, the switch reads are failsafe values, not the pilot.
+			s.switchMode, s.RC.ModeSwitch = nil, ""
+			events = append(events, l.updateOverrideLocked(now)...)
+		}
+	case *common.MessageRcChannels:
+		l.readSwitchLocked(m)
+		events = append(events, l.updateOverrideLocked(now)...)
 	case *common.MessageBatteryStatus:
 		events = append(events, l.setFailsafeLocked("battery", m.ChargeState >= common.MAV_BATTERY_CHARGE_STATE_LOW, now)...)
 	case *common.MessageGpsRawInt:
@@ -301,6 +324,7 @@ func (l *Link) handle(ctx context.Context, sysID uint8, msg message.Message) {
 
 // modeChangedLocked records a new FC mode and works out whether it means the
 // RC pilot has taken over: a pilot mode the agent didn't ask for (ADR-0008).
+// The caller follows it with updateOverrideLocked.
 func (l *Link) modeChangedLocked(mode uint32, now int64) []Event {
 	s := &l.st
 	first := !s.haveMode
@@ -312,14 +336,79 @@ func (l *Link) modeChangedLocked(mode uint32, now int64) []Event {
 	// (INITIALISING → MANUAL → whatever the RC switch says), and none of that
 	// is a pilot taking over. Checking the switch is in AUTO before a start
 	// is the separate preflight rule (ARCHITECTURE.md, RC override).
-	override := s.Armed && pilotMode(mode) && !commanded && !first
-	events := []Event{protocol.ModeChangedEvent{Kind: "modeChanged", Mode: s.FlightMode, TS: now}}
-	if override != s.RC.OverrideActive {
-		s.RC.OverrideActive = override
-		events = append(events, protocol.RCOverrideEvent{Kind: "rcOverride", Active: override, TS: now})
+	s.inferredOverride = s.Armed && pilotMode(mode) && !commanded && !first
+	l.log.Info("fc_mode", "mode", mode, "app_mode", s.FlightMode, "inferred_override", s.inferredOverride)
+	return []Event{protocol.ModeChangedEvent{Kind: "modeChanged", Mode: s.FlightMode, TS: now}}
+}
+
+// updateOverrideLocked works out whether the RC pilot has control (ADR-0008),
+// while armed: the mode switch is off AUTO, or the FC entered a pilot mode
+// the agent didn't command. The switch is the direct reading; the inference
+// covers an unknown switch, and modes changed by anything but the agent.
+// Handing back is the switch returning to AUTO (ArduPilot then flies AUTO).
+func (l *Link) updateOverrideLocked(now int64) []Event {
+	s := &l.st
+	switchOff := s.switchMode != nil && *s.switchMode != ModeAuto
+	active := s.Armed && (s.inferredOverride || switchOff)
+	if active == s.RC.OverrideActive {
+		return nil
 	}
-	l.log.Info("fc_mode", "mode", mode, "app_mode", s.FlightMode, "rc_override", override)
-	return events
+	s.RC.OverrideActive = active
+	l.log.Info("rc_override", "active", active, "switch", s.RC.ModeSwitch, "inferred", s.inferredOverride)
+	return []Event{protocol.RCOverrideEvent{Kind: "rcOverride", Active: active, TS: now}}
+}
+
+// readSwitchLocked sets the mode the RC switch selects from RC_CHANNELS, or
+// clears it when there's no trustworthy reading.
+func (l *Link) readSwitchLocked(m *common.MessageRcChannels) {
+	s := &l.st
+	s.switchMode, s.RC.ModeSwitch = nil, ""
+	pwm, ok := channelPWM(m, l.modeSwitch)
+	if !ok || !s.RC.Linked {
+		return
+	}
+	if pos, ok := switchPosition(pwm); ok {
+		mode := l.modeSwitch.modes[pos]
+		s.switchMode, s.RC.ModeSwitch = &mode, appFlightMode(mode)
+	}
+}
+
+// channelPWM is the mode switch channel's pulse in RC_CHANNELS.
+func channelPWM(m *common.MessageRcChannels, sw *modeSwitch) (uint16, bool) {
+	if sw == nil || sw.channel < 1 || sw.channel > int(m.Chancount) {
+		return 0, false
+	}
+	raw := [18]uint16{m.Chan1Raw, m.Chan2Raw, m.Chan3Raw, m.Chan4Raw, m.Chan5Raw, m.Chan6Raw,
+		m.Chan7Raw, m.Chan8Raw, m.Chan9Raw, m.Chan10Raw, m.Chan11Raw, m.Chan12Raw,
+		m.Chan13Raw, m.Chan14Raw, m.Chan15Raw, m.Chan16Raw, m.Chan17Raw, m.Chan18Raw}
+	if sw.channel > len(raw) {
+		return 0, false
+	}
+	pwm := raw[sw.channel-1]
+	return pwm, pwm != 0 && pwm != 65535
+}
+
+// readModeSwitch reads FLTMODE_CH and FLTMODE1..6, so RC_CHANNELS can be
+// turned into the mode the pilot's switch selects. Read-only.
+func (l *Link) readModeSwitch(ctx context.Context) error {
+	ch, err := l.Param(ctx, "FLTMODE_CH")
+	if err != nil {
+		return fmt.Errorf("FLTMODE_CH: %w", err)
+	}
+	sw := &modeSwitch{channel: int(ch)}
+	for i := range sw.modes {
+		name := fmt.Sprintf("FLTMODE%d", i+1)
+		v, err := l.Param(ctx, name)
+		if err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+		sw.modes[i] = uint32(v)
+	}
+	l.mu.Lock()
+	l.modeSwitch = sw
+	l.mu.Unlock()
+	l.log.Info("fc_mode_switch", "channel", sw.channel, "modes", sw.modes)
+	return nil
 }
 
 func (l *Link) setFailsafeLocked(flag string, active bool, now int64) []Event {
@@ -348,6 +437,9 @@ func (l *Link) requestStreams(ctx context.Context) {
 	}
 	_, _ = l.commandLong(ctx, common.MAV_CMD_REQUEST_MESSAGE, 242) // HOME_POSITION now
 	l.log.Info("fc_streams_requested")
+	if err := l.readModeSwitch(ctx); err != nil {
+		l.log.Warn("fc_mode_switch_read_failed", "error", err.Error())
+	}
 	// Adopt whatever mission the FC already holds (agent restart, or a
 	// ground-station tool wrote it).
 	if _, err := l.CurrentMission(ctx); err != nil {

@@ -77,7 +77,7 @@ Never sent, blocked in the agent: `RC_CHANNELS_OVERRIDE`, `MANUAL_CONTROL`, `SET
 | `vtolState`, `landed` | `EXTENDED_SYS_STATE` (`vtol_state`, `landed_state`) |
 | `home` | `HOME_POSITION` |
 | `missionProgress` | `MISSION_CURRENT` through the index table |
-| `rc` | `RC_CHANNELS` (link from `rssi` / channel count; mode-switch position from `FLTMODE_CH`) |
+| `rc` | `linked` from the `SYS_STATUS` RC receiver health flag. `modeSwitch`: the agent reads `FLTMODE_CH` and `FLTMODE1..6` once per FC connection, then turns that channel's `RC_CHANNELS` pulse into a position with ArduPilot's own thresholds (`read_6pos_switch`); omitted while RC isn't linked. `overrideActive` while armed: the switch is off AUTO, or the FC entered a pilot mode the agent didn't command (covers an unknown switch, and modes set by another ground station). |
 | `failsafe.geofence` | `FENCE_STATUS` |
 | `failsafe.battery`, `failsafe.rc` | `BATTERY_STATUS` / `SYS_STATUS` flags and `STATUSTEXT` ❓ |
 | `failsafe.gcs` | The agent's own view of the commander session |
@@ -109,4 +109,5 @@ The planner's height profile and time estimate model how ArduPlane flies the mis
 - Turn radius: the mock uses a fixed turn rate (20°/s); ArduPlane's depends on bank limit (`ROLL_LIMIT_DEG`) and airspeed.
 - Cruise speed: the mock hardcodes 18 m/s; ArduPlane uses `AIRSPEED_CRUISE`. 🧪 SITL's QuadPlane cruises at 25 m/s. At 18 m/s it sits on `Q_ASSIST_SPEED` (18), so VTOL assist keeps cutting in. The real airframe's figure replaces both; until then the mock should move to 25 m/s, which also changes its turn radius and `MIN_LOITER_RADIUS_M`.
 - Disarm after landing: 🧪 ArduPlane disarms by itself a few seconds after a VTOL landing (QLAND, QRTL, `NAV_VTOL_LAND`). The operator doesn't have to.
-- Landed VTOL state: 🧪 ArduPlane reports `fw` on the ground in a fixed-wing mode (it boots into FBWA from the SITL RC switch position); the mock says `mc`.
+- Landed VTOL state: 🧪 ArduPlane reports `fw` on the ground in a fixed-wing mode such as FBWA (SITL booted into it from its RC switch position until `FLTMODE6` was set to AUTO); the mock says `mc`.
+- The RC mode switch needs an AUTO position (ADR-0008): `mission.start` is refused unless RC is linked and the switch is there. SITL holds the switch channel at 1800 µs (position 6), so `sim/params` sets `FLTMODE6 10`. ArduPlane only acts on the switch when it *moves*, but at boot it takes the switch's mode, so the FC powers up in AUTO, disarmed; `arm` switches it to QLOITER first, so arming never starts the mission.

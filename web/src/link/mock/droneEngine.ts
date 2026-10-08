@@ -250,7 +250,8 @@ export class DroneEngine {
       landed: this.sim.phase === 'idle' || this.sim.phase === 'landed',
       home: this.sim.home,
       missionProgress: { currentIndex: this.sim.missionIndex, total: this.mission?.items.length ?? 0 },
-      rc: { linked: true, overrideActive: this.fault.rcOverrideActive },
+      // A takeover is the pilot moving the switch off AUTO (ADR-0008).
+      rc: { linked: true, overrideActive: this.fault.rcOverrideActive, modeSwitch: this.fault.rcOverrideActive ? 'FBWA' : 'AUTO' },
       failsafe: this.failsafeFlags,
       updatedAt: Date.now(),
     }

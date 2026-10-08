@@ -67,6 +67,9 @@ type MissionProgress struct {
 type RCStatus struct {
 	Linked         bool `json:"linked"`
 	OverrideActive bool `json:"overrideActive"`
+	// ModeSwitch is the flight mode the radio's mode switch selects (app
+	// FlightMode), omitted when unknown: no RC link, or FLTMODE_* unread.
+	ModeSwitch string `json:"modeSwitch,omitempty"`
 }
 
 type FailsafeFlags struct {

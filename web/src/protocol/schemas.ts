@@ -52,6 +52,7 @@ export const missionProgressSchema = z.object({
 export const rcStatusSchema = z.object({
   linked: z.boolean(),
   overrideActive: z.boolean(),
+  modeSwitch: flightModeSchema.optional(),
 })
 
 export const failsafeFlagsSchema = z.object({

@@ -36,11 +36,17 @@ export function restartSitl() {
   execFileSync('docker', ['compose', 'up', '-d', '--force-recreate'], { cwd: path.join(REPO, 'sim'), stdio: 'inherit' })
 }
 
-/** The SITL "RC pilot" switching modes from its own connection (cmd/sitlpilot). */
-export function pilotSwitchesTo(mode: 'FBWA' | 'AUTO' | 'QHOVER' | 'QLOITER' | 'MANUAL') {
+function sitlpilot(args: string[]) {
   const bin = process.env.SITLPILOT_BIN
   if (!bin) throw new Error('SITLPILOT_BIN not set: run through playwright.sitl.config.ts')
-  execFileSync(bin, ['-mode', mode], { stdio: 'inherit' })
+  execFileSync(bin, args, { stdio: 'inherit' })
+}
+
+/** The SITL "RC pilot" moving the radio's mode switch (cmd/sitlpilot
+ * -switch): to a mode's position, or released back to SITL's own simulated
+ * radio, which sits at AUTO. */
+export function pilotMovesSwitchTo(to: 'FBWA' | 'LOITER' | 'QLOITER' | 'RTL' | 'release') {
+  sitlpilot(['-switch', to])
 }
 
 /** Seeds the test mission as the most recent saved one, which the app

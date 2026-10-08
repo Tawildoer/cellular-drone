@@ -3,7 +3,7 @@ import {
   arm,
   connectToDrone,
   hold,
-  pilotSwitchesTo,
+  pilotMovesSwitchTo,
   restartSitl,
   seedMission,
   TEST_MISSION,
@@ -88,9 +88,10 @@ test('plan, upload, fly, pause, resume, RTL and land', async ({ page, browser })
 })
 
 /**
- * ADR-0008: the local radio always wins. The "pilot" (cmd/sitlpilot, standing
- * in for the radio's mode switch) takes over mid-mission; the browser shows
- * it and the agent refuses browser commands until the pilot hands back.
+ * ADR-0008: the local radio always wins. The "pilot" (cmd/sitlpilot -switch,
+ * moving SITL's simulated mode switch) takes over mid-mission; the browser
+ * shows it and the agent refuses browser commands until the switch is back
+ * at AUTO.
  */
 test('RC takeover blocks browser commands until the pilot hands back', async ({ page }) => {
   restartSitl()
@@ -101,15 +102,15 @@ test('RC takeover blocks browser commands until the pilot hands back', async ({ 
     await arm(page)
     await hold(page.getByRole('button', { name: 'Hold to start mission' }))
     await expect(tile(page, 'Flight mode')).toHaveText('AUTO')
-    // Climb first: ArduPlane reports VTOL state FW on the ground in FBWA (SITL's
-    // boot mode), so "FW" alone can be true before the VTOL takeoff starts.
+    // Climb first: ArduPlane reports VTOL state FW on the ground in a
+    // fixed-wing mode, so "FW" alone can be true before the VTOL takeoff.
     await waitForAltitude(page, 30)
     await expect(tile(page, 'VTOL state')).toHaveText('FW', { timeout: 2 * 60_000 })
   })
 
   const banner = page.getByText(/RC override active/)
-  await test.step('the pilot flips to FBWA: the browser shows the override', async () => {
-    pilotSwitchesTo('FBWA')
+  await test.step('the pilot flips the switch to FBWA: the browser shows the override', async () => {
+    pilotMovesSwitchTo('FBWA')
     await expect(banner).toBeVisible()
     await expect(tile(page, 'Flight mode')).toHaveText('FBWA')
   })
@@ -120,8 +121,8 @@ test('RC takeover blocks browser commands until the pilot hands back', async ({ 
     await expect(tile(page, 'Flight mode')).toHaveText('FBWA')
   })
 
-  await test.step('the pilot hands back to AUTO: the override clears', async () => {
-    pilotSwitchesTo('AUTO')
+  await test.step('the pilot hands back, switch to AUTO: the override clears', async () => {
+    pilotMovesSwitchTo('release')
     await expect(banner).toBeHidden()
     await expect(tile(page, 'Flight mode')).toHaveText('AUTO')
   })
@@ -131,3 +132,33 @@ test('RC takeover blocks browser commands until the pilot hands back', async ({ 
     await expect(tile(page, 'Flight mode')).toHaveText('RTL')
   })
 })
+
+/**
+ * ARCHITECTURE.md, RC override pre-flight: a mission starts only with the
+ * radio's mode switch at AUTO, so the pilot takes over by moving it. The
+ * checklist shows where it is, and nothing goes ahead until it's back.
+ */
+test('a mission only starts with the RC mode switch at AUTO', async ({ page }) => {
+  restartSitl()
+  await seedMission(page)
+  await connectToDrone(page)
+  const switchCheck = page.getByText(/RC mode switch at AUTO \(now FBWA\)/)
+
+  // The browser's checklist gates arming (and so starting); the agent
+  // refuses a start on its own too (internal/fc, rcPreflightLocked tests).
+  await test.step('switch off AUTO: the checklist says so and arming is blocked', async () => {
+    pilotMovesSwitchTo('FBWA')
+    await expect(switchCheck).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Hold to arm' })).toBeDisabled()
+  })
+
+  await test.step('switch back to AUTO: arm and start go ahead', async () => {
+    pilotMovesSwitchTo('release')
+    await expect(switchCheck).toBeHidden()
+    await arm(page)
+    await hold(page.getByRole('button', { name: 'Hold to start mission' }))
+    await expect(tile(page, 'Flight mode')).toHaveText('AUTO')
+    await waitForAltitude(page, 10)
+  })
+})
+

@@ -25,7 +25,7 @@ web/src/
 ## 1. Domain model (`domain/`)
 The app's own vocabulary. It's stable even if the flight stack or transport changes.
 
-- `VehicleState`: position (lat, lon, `altRelM`, `altAmslM`), attitude (roll, pitch, yaw in degrees), `groundSpeedMps`, `airspeedMps`, `climbMps`, battery (V, A, %), GPS (fix type, satellites, HDOP), `flightMode` (an **app enum**, see below), `armed`, `vtolState` (`mc` | `fw` | `transition`), `landed`, home, `missionProgress` (`currentIndex`, total), `rc` (`linked`, `overrideActive`), `failsafe` flags, `updatedAt`.
+- `VehicleState`: position (lat, lon, `altRelM`, `altAmslM`), attitude (roll, pitch, yaw in degrees), `groundSpeedMps`, `airspeedMps`, `climbMps`, battery (V, A, %), GPS (fix type, satellites, HDOP), `flightMode` (an **app enum**, see below), `armed`, `vtolState` (`mc` | `fw` | `transition`), `landed`, home, `missionProgress` (`currentIndex`, total), `rc` (`linked`, `overrideActive`, optional `modeSwitch`), `failsafe` flags, `updatedAt`.
 - `FlightMode`: app enum (`AUTO`, `LOITER`, `QLOITER`, `RTL`, `QLAND`, `QHOVER`, `FBWA`, `MANUAL`, `UNKNOWN`…). The agent maps from ArduPilot custom modes. The UI never sees raw numbers.
 - `Mission`: `{ id, name, items: MissionItem[], fence?, createdAt, updatedAt }`
 - `MissionItem` (discriminated union): `vtolTakeoff{altM}`, `waypoint{lat,lon,altM,acceptRadiusM?}`, `loiter{lat,lon,altM,radiusM,turns|untilUtcMinuteOfDay}` (ADR-0013), `vtolLand{lat,lon}`, `returnToLaunch`

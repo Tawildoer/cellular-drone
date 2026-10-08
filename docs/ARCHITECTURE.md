@@ -102,9 +102,9 @@ No RC override, no `MANUAL_CONTROL`, no direct attitude or velocity setpoints. T
 An ELRS receiver is wired directly to the FC, and it **always** has authority over the browser.
 
 - **Taking over:** ArduPilot changes mode when the RC mode switch *changes position*. The pilot flips the switch to FBWA, QHOVER or QLOITER (or RTL/QLAND), and that takes over at once, whatever the browser commanded. The browser then sees the mode change and the "RC override active" flag in telemetry.
-- **Handing back:** the pilot switches back to AUTO on the radio, or the browser sends `mode.resume` once the operator acknowledges it. The browser *cannot* leave a manual mode the pilot picked unless the pilot releases it. The agent refuses mode commands while the RC switch is in a manual position.
+- **Handing back:** the pilot switches back to AUTO on the radio, or the browser sends `mode.resume` once the operator acknowledges it. The browser *cannot* leave a manual mode the pilot picked unless the pilot releases it. The agent refuses mode commands while the RC switch is off its AUTO position (reported as `rc.modeSwitch`), and while the FC is in a pilot mode the agent didn't command.
 - **RC failsafe must not abort autonomy.** Beyond radio range the RC link is normally lost. Set `FS_LONG_ACTN` and `THR_FAILSAFE` so that losing RC **in AUTO continues the mission**. Losing the cellular link does nothing (ADR-0020). Losing RC while not in AUTO → RTL with a VTOL landing.
-- **Pre-flight check:** the RC link is present and the mode switch is in the AUTO position before a mission starts from the browser. The agent checks this.
+- **Pre-flight check:** the RC link is present and the mode switch is in the AUTO position before a mission starts from the browser. The agent checks this on `mission.start` (`preflight_failed` otherwise), and the browser's checklist shows it. So the radio needs a switch position set to AUTO in `FLTMODE1..6`.
 - The RC link is not routed through the companion computer, so an agent, modem or VPS failure can't affect it.
 - MAVLink2 signing between the agent and the FC, to be added during hardening.
 

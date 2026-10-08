@@ -19,6 +19,7 @@ func (l *Link) Command(ctx context.Context, cmd protocol.Command) protocol.Comma
 	override := l.st.RC.OverrideActive
 	vtol := l.st.VtolState
 	hasMission := l.plan != nil && len(l.plan.mission.Items) > 0
+	rcPreflight := l.rcPreflightLocked()
 	l.mu.Unlock()
 
 	switch cmd.Type {
@@ -48,8 +49,14 @@ func (l *Link) Command(ctx context.Context, cmd protocol.Command) protocol.Comma
 		return protocol.Rejected("video presets aren't implemented in the agent yet")
 	}
 
+	// Before anything else about a start: the safety pilot's radio is there
+	// and its switch is at AUTO (ARCHITECTURE.md, RC override pre-flight).
+	if cmd.Type == "mission.start" && rcPreflight != "" {
+		return protocol.CommandResult{OK: false, Reason: "preflight_failed", Detail: rcPreflight}
+	}
+
 	// Everything else is a mode change, which the RC pilot can veto by
-	// holding a manual mode (ADR-0008).
+	// holding a manual mode or moving the switch off AUTO (ADR-0008).
 	if override {
 		return protocol.CommandResult{OK: false, Reason: "blocked_rc_override", Detail: "the RC pilot has control"}
 	}
@@ -124,4 +131,21 @@ func ackResult(result common.MAV_RESULT, err error) protocol.CommandResult {
 		return protocol.Rejected("flight controller: " + resultName(result))
 	}
 	return protocol.CommandResult{OK: true}
+}
+
+// rcPreflightLocked is why a mission can't start as far as the radio goes,
+// or "" if it can: the RC link is present and the mode switch is at AUTO,
+// so the pilot takes over by moving it and hands back by returning it.
+func (l *Link) rcPreflightLocked() string {
+	switch {
+	case !l.st.RC.Linked:
+		return "no RC link: the safety pilot's radio must be on and bound"
+	case l.modeSwitch == nil:
+		return "the RC mode switch setup (FLTMODE_CH) hasn't been read from the flight controller yet"
+	case l.st.switchMode == nil:
+		return "no reading from the RC mode switch channel"
+	case *l.st.switchMode != ModeAuto:
+		return "the RC mode switch is at " + modeName(*l.st.switchMode) + ": set it to AUTO to start"
+	}
+	return ""
 }

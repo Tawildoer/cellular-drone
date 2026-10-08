@@ -35,7 +35,10 @@ cd ../web && npm run e2e:sitl     # ~10 min: builds the agent, starts server + a
 
 `web/e2e-sitl/` (Playwright, `playwright.sitl.config.ts`):
 - **Flight:** plan → save (upload, no error) → arm → start → fixed-wing → pause/resume → RTL → land → disarm.
-- **RC takeover (ADR-0008):** `agent/cmd/sitlpilot` switches SITL to FBWA from port 5762, as the radio's mode switch would. The UI shows the override banner, the agent refuses RTL with `blocked_rc_override`, and once the "pilot" hands back to AUTO, browser commands work again.
+- **RC takeover (ADR-0008):** `agent/cmd/sitlpilot -switch FBWA` moves SITL's simulated mode switch from port 5762 (an `RC_CHANNELS_OVERRIDE` on `FLTMODE_CH`; `RC_OVERRIDE_TIME -1` in `params/` keeps it there). The UI shows the override banner, the agent refuses RTL with `blocked_rc_override`, and once the "pilot" releases the switch back to AUTO (`-switch release`), browser commands work again.
+- **Switch at AUTO before a start:** with the switch at FBWA the checklist shows "RC mode switch at AUTO (now FBWA)" and arming stays blocked; released, the mission arms and starts.
+
+`sitlpilot -mode MODE` still exists: a mode change over MAVLink, which to the FC is another ground station rather than the radio.
 
 Each test restarts SITL. Logs land in `web/test-results-sitl/`, the report in `web/playwright-report-sitl/`.
 

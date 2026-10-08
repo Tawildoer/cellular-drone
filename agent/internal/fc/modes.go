@@ -1,5 +1,7 @@
 package fc
 
+import "fmt"
+
 // ArduPlane custom_mode numbers (ArduPlane/mode.h).
 const (
 	ModeManual     uint32 = 0
@@ -72,4 +74,33 @@ func armableOnGround(mode uint32) bool {
 		return true
 	}
 	return false
+}
+
+// switchPosition is ArduPilot's 6-position mode switch (RC_Channel::
+// read_6pos_switch): which of FLTMODE1..6 a PWM value selects, 0-based.
+// False for a pulse outside 900–2200, which isn't a real reading.
+func switchPosition(pwm uint16) (int, bool) {
+	switch {
+	case pwm <= 900 || pwm >= 2200:
+		return 0, false
+	case pwm < 1231:
+		return 0, true
+	case pwm < 1361:
+		return 1, true
+	case pwm < 1491:
+		return 2, true
+	case pwm < 1621:
+		return 3, true
+	case pwm < 1750:
+		return 4, true
+	}
+	return 5, true
+}
+
+// modeName is the app name of a mode, or its number when the app has none.
+func modeName(mode uint32) string {
+	if name := appFlightMode(mode); name != "UNKNOWN" {
+		return name
+	}
+	return fmt.Sprintf("mode %d", mode)
 }
