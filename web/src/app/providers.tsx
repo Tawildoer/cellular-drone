@@ -3,7 +3,7 @@ import { MockLink } from '../link/mock'
 import { createAuthStore, createMissionStore, createVehicleStore } from '../state'
 import { createAppServices, type AppServices } from './config'
 import { MockDevTools } from './MockDevTools'
-import { AppStoresContext, MissionTranslatorContext, useVehicleStore, type AppStores } from './store-hooks'
+import { AppStoresContext, MissionTranslatorContext, TerrainServiceContext, useVehicleStore, type AppStores } from './store-hooks'
 import { DEFAULT_USERNAME, DEFAULT_PASSWORD } from '../services/mock'
 
 export function AppProviders({ children }: { children: ReactNode }) {
@@ -28,8 +28,10 @@ export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <AppStoresContext.Provider value={stores}>
       <MissionTranslatorContext.Provider value={services.missionTranslator}>
-        {children}
-        <DevTools />
+        <TerrainServiceContext.Provider value={services.terrain}>
+          {children}
+          <DevTools />
+        </TerrainServiceContext.Provider>
       </MissionTranslatorContext.Provider>
     </AppStoresContext.Provider>
   )

@@ -11,7 +11,7 @@ web/src/
   domain/        Pure TS types + logic in OUR vocabulary (no MAVLink, no transport)
   protocol/      Versioned JSON message schemas (zod) = the wire contract
   link/          VehicleLink interface + implementations (mock, webrtc, ws…)
-  services/      AuthClient, MissionRepository interfaces + implementations
+  services/      AuthClient, MissionRepository, MissionTranslator, TerrainService interfaces + implementations
   state/         App stores (e.g. Zustand) fed by a VehicleLink
   features/      UI: map, hud, video, mission-planner, checklist, commands, login
   app/           Routing, providers, config (selects implementations)

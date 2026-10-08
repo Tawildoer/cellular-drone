@@ -3,9 +3,10 @@ import type { VehicleLink } from '../link'
 import { MockLink } from '../link/mock'
 import { WebRtcLink } from '../link/webrtc'
 import { WsLink } from '../link/ws'
-import type { AuthClient, MissionRepository, MissionTranslator } from '../services'
+import type { AuthClient, MissionRepository, MissionTranslator, TerrainService } from '../services'
 import { ArduPilotMissionTranslator } from '../services/ardupilot'
 import { LocalStorageMissionRepository } from '../services/local-storage'
+import { MapTilerTerrainService } from '../services/maptiler'
 import { MockAuthClient } from '../services/mock'
 
 export const DEMO_VEHICLE_ID = 'demo'
@@ -70,6 +71,9 @@ export interface AppServices {
   /** How missions look to the flight stack, for planner preview and export
    * (ADR-0017). The agent does the authoritative translation on upload. */
   missionTranslator: MissionTranslator
+  /** Ground elevation for the planner's terrain profile; null without a
+   * MapTiler key (the same key the map's 3D terrain needs). */
+  terrain: TerrainService | null
 }
 
 function iceServersFromEnv(): RTCIceServer[] | undefined {
@@ -104,6 +108,7 @@ function createConfiguredLink(): VehicleLink {
  * — state/ and features/ — sees only the interfaces.
  */
 export function createAppServices(): AppServices {
+  const maptilerKey: unknown = import.meta.env.VITE_MAPTILER_KEY
   let configuredLink: VehicleLink | null = null
   const resolveVehicleLink = (vehicleId: string): VehicleLink => {
     if (vehicleId === DEMO_VEHICLE_ID) {
@@ -119,5 +124,6 @@ export function createAppServices(): AppServices {
     vehicles: VEHICLES,
     missionRepository: new LocalStorageMissionRepository(),
     missionTranslator: new ArduPilotMissionTranslator(),
+    terrain: typeof maptilerKey === 'string' && maptilerKey ? new MapTilerTerrainService(maptilerKey) : null,
   }
 }

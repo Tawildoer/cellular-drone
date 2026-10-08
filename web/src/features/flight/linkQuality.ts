@@ -84,25 +84,84 @@ export function formatPath(status: LinkStatus | null): string {
   return parts.length > 0 ? parts.join(' · ') : 'Connected'
 }
 
-/** One second of the strength graph: its grade, or why there isn't one. */
-export type StrengthSlot = Grade | 'down' | 'unknown' | 'empty'
+/** Where the grade thresholds sit on the 0–1 strength scale. Fixed heights,
+ * so the strength line's colour bands are exactly the grades. */
+export const STRENGTH_FAIR = 2 / 3
+export const STRENGTH_POOR = 1 / 3
+
+/** Straight lines between (value, score) knots, flat beyond the ends. */
+function interpolate(value: number, knots: [number, number][]): number {
+  const first = knots[0]!
+  const last = knots.at(-1)!
+  if (value <= first[0]) return first[1]
+  if (value >= last[0]) return last[1]
+  for (let i = 1; i < knots.length; i++) {
+    const [x1, y1] = knots[i]!
+    const [x0, y0] = knots[i - 1]!
+    if (value <= x1) return y0 + ((value - x0) / (x1 - x0)) * (y1 - y0)
+  }
+  return last[1]
+}
+
+/** 1 at half the fair threshold or better, through the thresholds, 0 at
+ * twice the poor one. For RTT, loss and jitter. */
+export function scoreHigherWorse(value: number | undefined, t: { fair: number; poor: number }): number | undefined {
+  if (value === undefined) return undefined
+  return interpolate(value, [
+    [t.fair / 2, 1],
+    [t.fair, STRENGTH_FAIR],
+    [t.poor, STRENGTH_POOR],
+    [t.poor * 2, 0],
+  ])
+}
+
+/** 0 at nothing, through the thresholds, 1 as far above fair as fair is
+ * above poor. For frame rate. */
+export function scoreLowerWorse(value: number | undefined, t: { fair: number; poor: number }): number | undefined {
+  if (value === undefined) return undefined
+  return interpolate(value, [
+    [0, 0],
+    [t.poor, STRENGTH_POOR],
+    [t.fair, STRENGTH_FAIR],
+    [t.fair + (t.fair - t.poor) / 2, 1],
+  ])
+}
 
 /**
- * The last `count` seconds of link quality, oldest first, newest last, one
- * slot per second counted back from the newest point. 'down' = the link was
- * down; 'unknown' = up but nothing measured (e.g. a link without stats);
- * 'empty' = no point for that second (before history began).
+ * How strong the link is, 0–1: the weakest of latency, frame rate and packet
+ * loss (the same measures as linkGrade), each on a continuous scale through
+ * the same thresholds, so its colour band agrees with linkGrade (bar a
+ * reading sitting exactly on a threshold).
+ * Undefined when nothing was measured.
  */
-export function strengthSlots(history: LinkHistoryPoint[], count = 10): StrengthSlot[] {
-  const slots: StrengthSlot[] = Array.from({ length: count }, () => 'empty')
+export function linkScore(m: Pick<LinkHistoryPoint, 'rttMs' | 'videoFps' | 'packetLossPct'>): number | undefined {
+  const scores = [
+    scoreHigherWorse(m.rttMs, THRESHOLDS.rttMs),
+    // Frame rate and loss judge the video feed: only when there is one (videoGrade).
+    m.videoFps === undefined ? undefined : scoreLowerWorse(m.videoFps, THRESHOLDS.videoFps),
+    m.videoFps === undefined ? undefined : scoreHigherWorse(m.packetLossPct, THRESHOLDS.packetLossPct),
+  ].filter((v): v is number => v !== undefined)
+  return scores.length === 0 ? undefined : Math.min(...scores)
+}
+
+export function strengthGrade(score: number): Grade {
+  return score > STRENGTH_FAIR ? 'good' : score > STRENGTH_POOR ? 'fair' : 'poor'
+}
+
+/** One moment on the strength line: when, and the score, or why there isn't one. */
+export interface StrengthPoint {
+  /** How long before the newest point, ms. */
+  ageMs: number
+  /** 'down' = link down, 'unknown' = up but nothing measured. */
+  score: number | 'down' | 'unknown'
+}
+
+/** The last `windowMs` of link strength, oldest first, timed back from the
+ * newest point (so the line doesn't need a ticking clock of its own). */
+export function strengthSeries(history: LinkHistoryPoint[], windowMs = 10_000): StrengthPoint[] {
   const end = history.at(-1)?.at
-  if (end === undefined) return slots
-  for (const point of history) {
-    const age = Math.round((end - point.at) / 1000)
-    if (age >= count) continue
-    slots[count - 1 - age] = point.up
-      ? (linkGrade({ state: 'connected', rttMs: point.rttMs, videoFps: point.videoFps, packetLossPct: point.packetLossPct }) ?? 'unknown')
-      : 'down'
-  }
-  return slots
+  if (end === undefined) return []
+  return history
+    .filter((p) => end - p.at <= windowMs)
+    .map((p) => ({ ageMs: end - p.at, score: p.up ? (linkScore(p) ?? 'unknown') : 'down' }))
 }

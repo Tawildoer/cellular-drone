@@ -2,6 +2,7 @@ import type { Command, CommandResult, HomePosition, LinkStatus, Mission, Mission
 import { createMessage, decodeMessage, encodeMessage } from '../../protocol'
 import type { Unsubscribe, VehicleLink } from '../VehicleLink'
 import { DroneEngine, type FaultInjectionConfig } from './droneEngine'
+import { INITIAL_LINK_CONDITIONS, nextLinkConditions, type LinkConditions } from './linkConditions'
 
 export type { FailsafeFaultConfig, FaultInjectionConfig } from './droneEngine'
 
@@ -37,6 +38,7 @@ export class MockLink implements VehicleLink {
 
   private connectedAtMs: number | null = null
   private timer: ReturnType<typeof setInterval> | null = null
+  private conditions: LinkConditions = INITIAL_LINK_CONDITIONS
 
   private videoStream: MediaStream | null = null
   private videoDrawTimer: ReturnType<typeof setInterval> | null = null
@@ -64,7 +66,7 @@ export class MockLink implements VehicleLink {
     this.setStatus({
       state: fault.linkDropped ? 'disconnected' : 'connected',
       path: 'direct',
-      rttMs: fault.latencyMs,
+      ...this.reportedQuality(fault.latencyMs),
       lastTelemetryAt: Date.now(),
     })
     this.startVideo()
@@ -196,12 +198,23 @@ export class MockLink implements VehicleLink {
     for (const event of this.engine.tick(dtS)) this.emitEvent(event)
 
     this.emitState()
+    // Real time, not sim time: the link doesn't speed up with the sim.
+    this.conditions = nextLinkConditions(this.conditions, this.tickMs / 1000)
     this.setStatus({
       state: 'connected',
       path: 'direct',
-      rttMs: fault.latencyMs,
+      ...this.reportedQuality(fault.latencyMs),
       lastTelemetryAt: Date.now(),
     })
+  }
+
+  /** The simulated LTE conditions (linkConditions.ts), plus any injected latency. */
+  private reportedQuality(latencyMs: number): Pick<LinkStatus, 'rttMs' | 'videoFps' | 'packetLossPct'> {
+    return {
+      rttMs: Math.round(latencyMs + this.conditions.rttMs),
+      videoFps: Math.round(this.conditions.videoFps * 10) / 10,
+      packetLossPct: Math.round(this.conditions.packetLossPct * 100) / 100,
+    }
   }
 
   private emitState(): void {

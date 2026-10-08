@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { LinkStatus } from '../../domain'
-import { appendLinkHistory, LINK_HISTORY_WINDOW_MS } from '../linkHistory'
+import { appendLinkHistory, LINK_HISTORY_WINDOW_MS, LINK_SAMPLE_INTERVAL_MS } from '../linkHistory'
 
 const up: LinkStatus = { state: 'connected', rttMs: 40, videoFps: 30 }
 
 describe('appendLinkHistory', () => {
-  it('keeps at most one point per second, whatever rate the link reports at', () => {
+  it('keeps at most one point per sample interval, whatever rate the link reports at', () => {
     let history = appendLinkHistory([], up, 0)
-    history = appendLinkHistory(history, up, 100) // MockLink-style 100 ms tick: ignored
-    history = appendLinkHistory(history, up, 1000)
-    expect(history.map((p) => p.at)).toEqual([0, 1000])
+    history = appendLinkHistory(history, up, 100) // MockLink-style 100 ms tick: too soon
+    history = appendLinkHistory(history, up, LINK_SAMPLE_INTERVAL_MS)
+    expect(history.map((p) => p.at)).toEqual([0, LINK_SAMPLE_INTERVAL_MS])
   })
 
   it('drops points older than the window', () => {

@@ -26,10 +26,12 @@ Order: **frontend first against a mock vehicle**, then the real backend undernea
 - [x] `link/VehicleLink` interface + **contract test suite**
 - [x] `MockLink`: simulated VTOL flying missions, canvas test-pattern video, fault injection (latency, loss, link drop, RC override, low battery, failsafe). Passes the contract tests.
 - [x] `services/`: `AuthClient` (mock) + `MissionRepository` (localStorage)
-- [ ] UI: login → vehicle list → flight screen (map, HUD, video, link badge, RC override banner, event log)
-- [ ] UI: mission planner (tap to add, VTOL takeoff/land items, inline validation, save and load)
+- [x] UI: login → vehicle list → flight screen (map, HUD, video, link badge, RC override banner, event log)
+- [x] UI: mission planner (tap to add, VTOL takeoff/land items, inline validation, save and load)
 - [x] Fence validation checks legs and loiter circles, not just item points (ADR-0017, 2026-10-07)
-- [x] Planner: ArduPilot mission panel (preview rows, issues, vehicle readback match) and `.waypoints` export (ADR-0017 addendum, 2026-10-07)
+- [x] Planner: ArduPilot mission panel (preview rows, issues, vehicle readback match) and `.waypoints` export (ADR-0017 addendum, 2026-10-07). Removed from the UI 2026-10-08 as clutter; the translator, readback and golden tests stay
+- [x] Planner: height profile over terrain with clearance warnings, distance and time estimates at ArduPlane SITL figures (ADR-0021, 2026-10-08)
+- [x] Planner: "Follow terrain at X m" sets heights from the terrain and adds waypoints over ridges (ADR-0021 addendum, 2026-10-08). Native ArduPlane terrain following is a later ADR
 - [ ] UI: preflight checklist gate + command bar with hold/slide-to-confirm
 - [ ] Dev panel for MockLink fault injection
 - [ ] Playwright smoke: login → plan → upload → arm → start → pause/resume → RTL

@@ -8,7 +8,7 @@ import type {
   VehicleStore,
   VehicleStoreState,
 } from '../state'
-import type { MissionTranslator } from '../services'
+import type { MissionTranslator, TerrainService } from '../services'
 import { ArduPilotMissionTranslator } from '../services/ardupilot'
 
 export interface AppStores {
@@ -43,4 +43,11 @@ export const MissionTranslatorContext = createContext<MissionTranslator>(new Ard
 
 export function useMissionTranslator(): MissionTranslator {
   return useContext(MissionTranslatorContext)
+}
+
+/** Provided from AppServices; null (no terrain source) by default. */
+export const TerrainServiceContext = createContext<TerrainService | null>(null)
+
+export function useTerrainService(): TerrainService | null {
+  return useContext(TerrainServiceContext)
 }

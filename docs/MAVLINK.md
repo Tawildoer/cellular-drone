@@ -7,7 +7,7 @@ The browser speaks the app's own vocabulary (`domain/`, `protocol/` v1). The **d
 | | Code | Role |
 |---|---|---|
 | Agent (Go) | `agent/internal/mission` | **Authoritative.** Produces what is uploaded. Refuses unknown item types. |
-| Browser (TS) | `web/src/ardupilot`, via `services/MissionTranslator` | **Preview** in the planner, and `.waypoints` export. |
+| Browser (TS) | `web/src/ardupilot`, via `services/MissionTranslator` | **Preview** and `.waypoints` export (not shown in the UI since 2026-10-08). |
 | Both | `testdata/mission-translation/*.json` | Golden files both test suites run. Change a rule here, in both translators, and in a golden file together. |
 
 After an upload the vehicle returns the FC's readback (`mission.uploaded.onVehicle`). The planner compares it with its preview; the readback is what the aircraft will actually fly.
@@ -92,6 +92,12 @@ The agent requests rates with `SET_MESSAGE_INTERVAL` rather than relying on `SRx
 - 🧪 Resume rejoins the planned leg: `pause_resume.lua` calls `vehicle:set_crosstrack_start` with the previous planned waypoint just after AUTO resumes (ArduPlane on its own flies straight from where it is). Measured: back within 2 m of the leg 18 s after a resume, versus still 67 m off after 40 s without it. A browser pause (mode reason `GCS_COMMAND`) left for 120 s resumes by itself; an RC pilot's mode is never touched.
 - RC failsafe in AUTO continues the mission (`FS_LONG_ACTN`, `THR_FAILSAFE`), see ADR-0008.
 - Run `mavlink-router` on the air unit so Mission Planner or QGC can connect alongside the agent for setup and tuning. A second GCS that writes missions is detected by the mission-identity check.
+
+## Planner estimates (ADR-0021)
+
+The planner's height profile and time estimate model how ArduPlane flies the mission, at SITL's figures (`domain/missionProfile.ts`, `SITL_PERFORMANCE`): VTOL takeoff straight up at home at 2.5 m/s, ~10 s transition on the first leg, legs at `AIRSPEED_CRUISE` (25 m/s) with the height changing evenly along each leg, loiter laps at cruise, RTL home at `RTL_ALTITUDE` (assumed 60 m, `sim/params`), and a VTOL landing (land item or RTL) approached at the current height, ~10 s back-transition, then 1.5 m/s down to `Q_LAND_FINAL_ALT` (6 m) and `Q_LAND_SPEED` (0.5 m/s) to the ground. Change these with the parameters they name.
+
+*Follow terrain at X m* (ADR-0021 addendum) produces plain `NAV_WAYPOINT` / loiter rows in `MAV_FRAME_GLOBAL_RELATIVE_ALT` with heights computed from the terrain, plus extra waypoints over ridges: no terrain frame, no `TERRAIN_*` parameters, nothing the FC needs to know about. RTL still flies at `RTL_ALTITUDE`.
 
 ## Mock vs ArduPlane
 

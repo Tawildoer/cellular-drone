@@ -34,7 +34,7 @@ cd ../web && npm run e2e:sitl     # ~10 min: builds the agent, starts server + a
 ```
 
 `web/e2e-sitl/` (Playwright, `playwright.sitl.config.ts`):
-- **Flight:** plan → save (upload + "Vehicle readback matches") → arm → start → fixed-wing → pause/resume → RTL → land → disarm.
+- **Flight:** plan → save (upload, no error) → arm → start → fixed-wing → pause/resume → RTL → land → disarm.
 - **RC takeover (ADR-0008):** `agent/cmd/sitlpilot` switches SITL to FBWA from port 5762, as the radio's mode switch would. The UI shows the override banner, the agent refuses RTL with `blocked_rc_override`, and once the "pilot" hands back to AUTO, browser commands work again.
 
 Each test restarts SITL. Logs land in `web/test-results-sitl/`, the report in `web/playwright-report-sitl/`.
@@ -47,4 +47,4 @@ cd agent && go run ./cmd/agent -fc tcp:127.0.0.1:5760 -video-cmd ""
 cd web && VITE_VEHICLE_LINK=webrtc npm run dev                  # open the app, pick Drone 1
 ```
 
-Plan a mission, save it (that uploads it), then arm and start from the command bar. The planner's ArduPilot panel should then show "Vehicle readback matches".
+Plan a mission, save it (that uploads it), then arm and start from the command bar. To see what the FC holds, connect Mission Planner or MAVProxy to port 5762.

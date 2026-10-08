@@ -4,9 +4,9 @@ import { CommandBar } from '../command-bar/CommandBar'
 import { PreflightChecklist } from '../checklist/PreflightChecklist'
 import { Button } from '../../components/ui/button'
 import type { GeoPoint } from '../../domain'
-import { FlightControllerMissionPanel } from '../mission-planner/FlightControllerMissionPanel'
 import { MissionItemListPanel } from '../mission-planner/MissionItemListPanel'
 import { MissionListPanel } from '../mission-planner/MissionListPanel'
+import { MissionProfilePanel } from '../mission-planner/MissionProfilePanel'
 import { MissionValidationPanel } from '../mission-planner/MissionValidationPanel'
 import { insertWaypoint, skeletonItems } from '../mission-planner/missionEdit'
 import { EventLogPopout } from './EventLogPopout'
@@ -109,11 +109,18 @@ export function FlightScreen({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
-      <div className="absolute bottom-6 left-6 z-20 flex max-w-xl flex-col gap-2">
+      {/* While planning, capped below the HUD and saved-missions list and
+          scrolling as a whole: the planner's panels stack up from the
+          bottom and would otherwise climb over them on a short screen. */}
+      <div
+        className={`absolute bottom-6 left-6 z-20 flex max-w-xl flex-col gap-2 ${
+          planning ? 'max-h-[calc(100svh-15rem)] overflow-y-auto [&>*]:shrink-0' : ''
+        }`}
+      >
         {planning && draft ? (
           <>
             <MissionValidationPanel mission={draft} />
-            <FlightControllerMissionPanel mission={draft} />
+            <MissionProfilePanel mission={draft} onChangeItems={(items) => updateDraft({ items })} />
             {uploadError && (
               <div role="alert" className="glass-panel px-2.5 py-1.5">
                 <span className="hud-label" style={{ color: 'var(--status-critical)' }}>

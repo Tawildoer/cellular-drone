@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { formatKbps, formatPath, gradeHigherWorse, gradeLowerWorse, linkGrade, strengthSlots, THRESHOLDS, videoGrade } from '../linkQuality'
+import {
+  formatKbps,
+  formatPath,
+  gradeHigherWorse,
+  gradeLowerWorse,
+  linkGrade,
+  linkScore,
+  scoreHigherWorse,
+  scoreLowerWorse,
+  STRENGTH_FAIR,
+  STRENGTH_POOR,
+  strengthGrade,
+  strengthSeries,
+  THRESHOLDS,
+  videoGrade,
+} from '../linkQuality'
 
 describe('grading', () => {
   it('grades higher-is-worse measures at the fair and poor thresholds', () => {
@@ -47,37 +62,63 @@ describe('formatting', () => {
   })
 })
 
-describe('strengthSlots', () => {
-  const at = (s: number) => 1_000_000 + s * 1000
+describe('link strength score', () => {
+  it('runs continuously through the grade thresholds', () => {
+    const t = THRESHOLDS.rttMs
+    expect(scoreHigherWorse(t.fair / 2, t)).toBe(1)
+    expect(scoreHigherWorse(t.fair, t)).toBeCloseTo(STRENGTH_FAIR)
+    expect(scoreHigherWorse(t.poor, t)).toBeCloseTo(STRENGTH_POOR)
+    expect(scoreHigherWorse(t.poor * 2, t)).toBe(0)
+    expect(scoreHigherWorse(9999, t)).toBe(0)
+    // Strictly between thresholds it's strictly between their scores.
+    const mid = scoreHigherWorse((t.fair + t.poor) / 2, t)!
+    expect(mid).toBeLessThan(STRENGTH_FAIR)
+    expect(mid).toBeGreaterThan(STRENGTH_POOR)
+  })
 
-  it('lays the last ten seconds out oldest first, newest last', () => {
+  it('scores frame rate the other way up', () => {
+    const t = THRESHOLDS.videoFps
+    expect(scoreLowerWorse(0, t)).toBe(0)
+    expect(scoreLowerWorse(t.poor, t)).toBeCloseTo(STRENGTH_POOR)
+    expect(scoreLowerWorse(t.fair, t)).toBeCloseTo(STRENGTH_FAIR)
+    expect(scoreLowerWorse(60, t)).toBe(1)
+  })
+
+  it('is the weakest measure, and lands in the same band as the grade', () => {
+    for (const m of [{ rttMs: 40 }, { rttMs: 200 }, { rttMs: 500 }, { rttMs: 40, videoFps: 10 }, { rttMs: 40, videoFps: 30, packetLossPct: 3 }]) {
+      expect(strengthGrade(linkScore(m)!)).toBe(linkGrade({ state: 'connected', ...m }))
+    }
+  })
+
+  it('ignores loss when there is no video, like the grade', () => {
+    expect(linkScore({ rttMs: 40, packetLossPct: 50 })).toBe(1)
+    expect(linkScore({})).toBeUndefined()
+  })
+})
+
+describe('strengthSeries', () => {
+  const at = (ms: number) => 1_000_000 + ms
+
+  it('times points back from the newest, oldest first, within the window', () => {
     const history = [
       { at: at(0), up: true, rttMs: 40 },
-      { at: at(1), up: true, rttMs: 200 },
-      { at: at(2), up: true, rttMs: 500 },
+      { at: at(5_000), up: true, rttMs: 200 },
+      { at: at(12_000), up: true, rttMs: 40 },
     ]
-    expect(strengthSlots(history, 10).slice(-3)).toEqual(['good', 'fair', 'poor'])
-    expect(strengthSlots(history, 10).slice(0, 7)).toEqual(Array(7).fill('empty'))
+    const series = strengthSeries(history, 10_000)
+    expect(series.map((p) => p.ageMs)).toEqual([7_000, 0])
+    expect(series[0]!.score).toBeLessThan(STRENGTH_FAIR)
   })
 
-  it('drops seconds older than the window', () => {
-    const history = Array.from({ length: 15 }, (_, s) => ({ at: at(s), up: true, rttMs: s < 5 ? 500 : 40 }))
-    expect(strengthSlots(history, 10)).toEqual(Array(10).fill('good'))
-  })
-
-  it('marks seconds the link was down, and up-but-unmeasured seconds, distinctly', () => {
-    const history = [
+  it('marks moments the link was down, and up but unmeasured, distinctly', () => {
+    const series = strengthSeries([
       { at: at(0), up: false },
-      { at: at(1), up: true },
-    ]
-    expect(strengthSlots(history, 10).slice(-2)).toEqual(['down', 'unknown'])
+      { at: at(250), up: true },
+    ])
+    expect(series.map((p) => p.score)).toEqual(['down', 'unknown'])
   })
 
-  it('grades a second by its worst measure, frame rate included', () => {
-    expect(strengthSlots([{ at: at(0), up: true, rttMs: 40, videoFps: 10 }], 10).at(-1)).toBe('poor')
-  })
-
-  it('is all empty with no history', () => {
-    expect(strengthSlots([], 10)).toEqual(Array(10).fill('empty'))
+  it('is empty with no history', () => {
+    expect(strengthSeries([])).toEqual([])
   })
 })
