@@ -87,6 +87,17 @@ describe('stepSim', () => {
     expect(after.phase).toBe(paused.phase)
   })
 
+  it('resuming keeps the planned leg, so the aircraft steers back onto it', () => {
+    // The behaviour sim/scripts/pause_resume.lua gives ArduPlane (ADR-0020).
+    const m = mission()
+    let state = startMission(initialSimState(home), m)
+    for (let i = 0; i < 200 && state.phase !== 'cruise'; i++) state = stepSim(state, m, 1)
+    expect(state.phase).toBe('cruise')
+    const offLine = { ...state.position, lat: state.position.lat - 0.001 }
+    const resumed = setPaused({ ...setPaused(state, true), position: offLine }, false)
+    expect(resumed.legStart).toEqual(state.legStart)
+  })
+
   it('startRtl heads towards home and eventually lands', () => {
     const m = mission()
     let state = startMission(initialSimState(home), m)

@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   alongTrackFraction,
   bearingDeg,
+  distanceToPolygonEdgeM,
   fromLocalEastNorthM,
   haversineDistanceM,
   isPointInPolygon,
   moveToward,
   pathLengthM,
   projectOntoSegment,
+  segmentsIntersect,
 } from '../geo'
 
 const METERS_PER_DEG_LAT = 111_320
@@ -148,3 +150,34 @@ describe('alongTrackFraction', () => {
     expect(alongTrackFraction({ lat: 5, lon: 5 }, LINE_FROM, LINE_FROM)).toBe(1)
   })
 })
+
+describe('segmentsIntersect', () => {
+  const p = (lat: number, lon: number) => ({ lat, lon })
+
+  it('detects a crossing', () => {
+    expect(segmentsIntersect(p(0, 0), p(1, 1), p(0, 1), p(1, 0))).toBe(true)
+  })
+
+  it('ignores parallel and separate segments', () => {
+    expect(segmentsIntersect(p(0, 0), p(0, 1), p(1, 0), p(1, 1))).toBe(false)
+    expect(segmentsIntersect(p(0, 0), p(1, 1), p(2, 2), p(3, 0))).toBe(false)
+  })
+
+  it('counts touching as crossing', () => {
+    expect(segmentsIntersect(p(0, 0), p(1, 0), p(1, 0), p(1, 1))).toBe(true)
+  })
+})
+
+describe('distanceToPolygonEdgeM', () => {
+  it('is the distance to the nearest edge', () => {
+    const square = [
+      { lat: 0, lon: 0 },
+      { lat: 0, lon: 0.01 },
+      { lat: 0.01, lon: 0.01 },
+      { lat: 0.01, lon: 0 },
+    ]
+    // 0.002° of latitude from the bottom edge ≈ 222.6 m.
+    expect(distanceToPolygonEdgeM({ lat: 0.002, lon: 0.005 }, square)).toBeCloseTo(222.6, 0)
+  })
+})
+

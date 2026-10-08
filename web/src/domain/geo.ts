@@ -147,3 +147,57 @@ export function alongTrackFraction(position: GeoPoint, from: GeoPoint, to: GeoPo
   const proj = projectOntoSegment(position, from, to)
   return proj ? proj.closestDistAlong / proj.segLen : 1
 }
+
+/**
+ * Whether segments `a1 -> a2` and `b1 -> b2` cross or touch, in local
+ * east/north metres. Touching counts: a leg that grazes a fence line is
+ * treated as crossing it.
+ */
+export function segmentsIntersect(a1: GeoPoint, a2: GeoPoint, b1: GeoPoint, b2: GeoPoint): boolean {
+  const origin = a1
+  const p = [a1, a2, b1, b2].map((point) => localEastNorthM(origin, point))
+  const [pa1, pa2, pb1, pb2] = p as [Local, Local, Local, Local]
+
+  const d1 = cross(pb1, pb2, pa1)
+  const d2 = cross(pb1, pb2, pa2)
+  const d3 = cross(pa1, pa2, pb1)
+  const d4 = cross(pa1, pa2, pb2)
+
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) return true
+  return (
+    (d1 === 0 && onSegment(pb1, pb2, pa1)) ||
+    (d2 === 0 && onSegment(pb1, pb2, pa2)) ||
+    (d3 === 0 && onSegment(pa1, pa2, pb1)) ||
+    (d4 === 0 && onSegment(pa1, pa2, pb2))
+  )
+}
+
+type Local = { eastM: number; northM: number }
+
+/** z of (b - a) × (c - a): which side of line a→b point c is on. */
+function cross(a: Local, b: Local, c: Local): number {
+  return (b.eastM - a.eastM) * (c.northM - a.northM) - (b.northM - a.northM) * (c.eastM - a.eastM)
+}
+
+/** For c already collinear with a→b: whether it lies within the segment. */
+function onSegment(a: Local, b: Local, c: Local): boolean {
+  return (
+    Math.min(a.eastM, b.eastM) <= c.eastM &&
+    c.eastM <= Math.max(a.eastM, b.eastM) &&
+    Math.min(a.northM, b.northM) <= c.northM &&
+    c.northM <= Math.max(a.northM, b.northM)
+  )
+}
+
+/** Shortest distance, in metres, from `point` to the polygon's boundary. */
+export function distanceToPolygonEdgeM(point: GeoPoint, polygon: GeoPoint[]): number {
+  let best = Infinity
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[j]
+    const b = polygon[i]
+    if (!a || !b) continue
+    const proj = projectOntoSegment(point, a, b)
+    best = Math.min(best, proj ? proj.crossTrackM : haversineDistanceM(point, a))
+  }
+  return best
+}

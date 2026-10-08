@@ -21,6 +21,7 @@ import {
   buildTrailLineGeoJson,
   isLappingCurrentLoiter,
   metersPerPixel,
+  zoomToShowMission,
   type AircraftPose,
   type AltitudePoint,
 } from './flightMapGeo'
@@ -113,7 +114,8 @@ function buildMapStyle(): StyleSpecification {
       'source-layer': 'building',
       // Not below FLAT_OVERLAY_MAX_ZOOM: with terrain on, the flat zoomed-out
       // overlays are draped onto the ground, where building roofs cover them.
-      minzoom: FLAT_OVERLAY_MAX_ZOOM,
+      // Switched by camera zoom (syncZoomLayers), not a layer minzoom.
+      layout: { visibility: 'none' },
       paint: {
         'fill-extrusion-color': '#3a4a56',
         'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 5],
@@ -166,8 +168,62 @@ const MISSION_WAYPOINTS_FLAT_SOURCE = 'mission-waypoints-flat'
  * extrusions — all in the drone's own ~1m altitude band — z-fight through
  * each other (flightMapGeo.ts, "Flat (zoomed-out) overlays"). The aircraft
  * swaps too, to an HTML marker: alone out there, the 3D arrow still clipped
- * into the terrain. */
-const FLAT_OVERLAY_MAX_ZOOM = 15
+ * into the terrain. 14 rather than 15: switching at 15 came too close in and
+ * felt jarring (2026-10-07). If the extrusions start flickering just above
+ * 14, that's the z-fighting this guards against: nudge it back up. */
+const FLAT_OVERLAY_MAX_ZOOM = 14
+
+/**
+ * The 3D layers shown from FLAT_OVERLAY_MAX_ZOOM in, switched by the
+ * *camera's* zoom in syncZoomLayers rather than a layer `minzoom`. MapLibre
+ * applies a layer minzoom to each tile's own zoom, and a tilted camera loads
+ * distant tiles at lower zooms, so with a minzoom the far part of the path,
+ * the trail, the aircraft and the buildings vanished at a shallow angle
+ * while the flat stand-ins were still switched off by the camera zoom.
+ */
+const LAYERS_3D = [
+  TRAIL_SOURCE,
+  MISSION_WAYPOINT_MARKERS_SOURCE,
+  MISSION_FLOATING_PATH_SOURCE,
+  MISSION_LOITER_RINGS_SOURCE,
+  AIRCRAFT_MARKER_SOURCE,
+  BUILDINGS_LAYER,
+]
+
+/** Their flat stand-ins, shown exactly when LAYERS_3D aren't. Same reason
+ * for not using a layer `maxzoom`: a tilted camera loads the tiles nearest it
+ * at a higher zoom than its own, so just below the threshold the flat path
+ * went missing there while the 3D one was already switched off. */
+const LAYERS_FLAT = [TRAIL_FLAT_SOURCE, MISSION_PATH_FLAT_SOURCE, MISSION_LOITER_RINGS_FLAT_SOURCE, MISSION_WAYPOINTS_FLAT_SOURCE]
+
+function setVisible(map: MaplibreMap, ids: string[], visible: boolean) {
+  const visibility = visible ? 'visible' : 'none'
+  for (const id of ids) {
+    if (map.getLayer(id) && map.getLayoutProperty(id, 'visibility') !== visibility) {
+      map.setLayoutProperty(id, 'visibility', visibility)
+    }
+  }
+}
+
+/** Switches between the 3D and flat overlay sets by the camera's zoom. */
+function syncZoomLayers(map: MaplibreMap) {
+  const zoomedIn = map.getZoom() >= FLAT_OVERLAY_MAX_ZOOM
+  setVisible(map, LAYERS_3D, zoomedIn)
+  setVisible(map, LAYERS_FLAT, !zoomedIn)
+}
+
+/** For the 3D overlay sources: no simplification, so a distant low-zoom
+ * tile keeps the small aircraft shape and thin ribbons intact. */
+const OVERLAY_3D_SOURCE = { tolerance: 0 } as const
+
+/**
+ * Tile level of detail for the buildings when the camera is tilted. The
+ * vector tiles only carry buildings from about z13, so MapLibre's default
+ * (dropping zoom quickly toward the horizon) loses them in the middle
+ * distance. Fewer zoom levels on screen keeps them further out, at the cost
+ * of loading more tiles. Tune here if it gets slow.
+ */
+const BUILDINGS_TILE_LOD = { maxZoomLevelsOnScreen: 3, tileCountMaxMinRatio: 5 } as const
 
 function setSourceData(map: MaplibreMap, id: string, data: Parameters<GeoJSONSource['setData']>[0]) {
   ;(map.getSource(id) as GeoJSONSource | undefined)?.setData(data)
@@ -355,12 +411,12 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       // rest of the overlays (flightMapGeo.ts), solid rather than dashed so
       // it reads as "where it's been" against the dashed "where it's going"
       // planned path.
-      map.addSource(TRAIL_SOURCE, { type: 'geojson', data: buildFloatingTrailGeoJson([]) })
+      map.addSource(TRAIL_SOURCE, { type: 'geojson', ...OVERLAY_3D_SOURCE, data: buildFloatingTrailGeoJson([]) })
       map.addLayer({
         id: TRAIL_SOURCE,
         type: 'fill-extrusion',
         source: TRAIL_SOURCE,
-        minzoom: FLAT_OVERLAY_MAX_ZOOM,
+        layout: { visibility: 'none' }, // by camera zoom: syncZoomLayers
         paint: {
           'fill-extrusion-color': '#00d4ff',
           'fill-extrusion-height': ['get', 'top'],
@@ -383,13 +439,14 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       // Disappears once the vehicle has flown through it (missionProgress).
       map.addSource(MISSION_WAYPOINT_MARKERS_SOURCE, {
         type: 'geojson',
+        ...OVERLAY_3D_SOURCE,
         data: buildMissionWaypointMarkersGeoJson(mission, pathClearedBeforeIndex(vehicleState), viewMetersPerPx(map)),
       })
       map.addLayer({
         id: MISSION_WAYPOINT_MARKERS_SOURCE,
         type: 'fill-extrusion',
         source: MISSION_WAYPOINT_MARKERS_SOURCE,
-        minzoom: FLAT_OVERLAY_MAX_ZOOM,
+        layout: { visibility: 'none' }, // by camera zoom: syncZoomLayers
         paint: {
           'fill-extrusion-color': '#9f6fff',
           'fill-extrusion-height': ['get', 'top'],
@@ -406,13 +463,14 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       // cleared are dropped as missionProgress advances.
       map.addSource(MISSION_FLOATING_PATH_SOURCE, {
         type: 'geojson',
+        ...OVERLAY_3D_SOURCE,
         data: floatingPathGeoJson(mission, vehicleState, false, viewMetersPerPx(map)),
       })
       map.addLayer({
         id: MISSION_FLOATING_PATH_SOURCE,
         type: 'fill-extrusion',
         source: MISSION_FLOATING_PATH_SOURCE,
-        minzoom: FLAT_OVERLAY_MAX_ZOOM,
+        layout: { visibility: 'none' }, // by camera zoom: syncZoomLayers
         paint: {
           'fill-extrusion-color': '#9f6fff',
           'fill-extrusion-height': ['get', 'top'],
@@ -428,13 +486,14 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       // the other mission overlays.
       map.addSource(MISSION_LOITER_RINGS_SOURCE, {
         type: 'geojson',
+        ...OVERLAY_3D_SOURCE,
         data: buildMissionLoiterRingsGeoJson(mission, pathClearedBeforeIndex(vehicleState), viewMetersPerPx(map)),
       })
       map.addLayer({
         id: MISSION_LOITER_RINGS_SOURCE,
         type: 'fill-extrusion',
         source: MISSION_LOITER_RINGS_SOURCE,
-        minzoom: FLAT_OVERLAY_MAX_ZOOM,
+        layout: { visibility: 'none' }, // by camera zoom: syncZoomLayers
         paint: {
           'fill-extrusion-color': '#2ecc71',
           'fill-extrusion-height': ['get', 'top'],
@@ -446,14 +505,13 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       // Zoomed-out stand-ins for the four extrusion layers above (see
       // FLAT_OVERLAY_MAX_ZOOM): fixed pixel widths, drawn in this order with no
       // depth, so nothing can fight. Same colours and dashing as the 3D set.
-      const flat = { maxzoom: FLAT_OVERLAY_MAX_ZOOM } as const
+      // Shown below FLAT_OVERLAY_MAX_ZOOM by syncZoomLayers, not a maxzoom.
       const lineShape = { 'line-join': 'round', 'line-cap': 'round' } as const
       map.addSource(TRAIL_FLAT_SOURCE, { type: 'geojson', data: buildTrailLineGeoJson(trailRef.current) })
       map.addLayer({
         id: TRAIL_FLAT_SOURCE,
         type: 'line',
         source: TRAIL_FLAT_SOURCE,
-        ...flat,
         layout: lineShape,
         paint: { 'line-color': '#00d4ff', 'line-width': 2.5 },
       })
@@ -462,7 +520,6 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
         id: MISSION_PATH_FLAT_SOURCE,
         type: 'line',
         source: MISSION_PATH_FLAT_SOURCE,
-        ...flat,
         paint: { 'line-color': '#9f6fff', 'line-width': 2, 'line-dasharray': [2, 1.5] },
       })
       map.addSource(MISSION_LOITER_RINGS_FLAT_SOURCE, {
@@ -473,7 +530,6 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
         id: MISSION_LOITER_RINGS_FLAT_SOURCE,
         type: 'line',
         source: MISSION_LOITER_RINGS_FLAT_SOURCE,
-        ...flat,
         paint: { 'line-color': '#2ecc71', 'line-width': 2, 'line-dasharray': [2, 1.5] },
       })
       map.addSource(MISSION_WAYPOINTS_FLAT_SOURCE, {
@@ -484,7 +540,6 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
         id: MISSION_WAYPOINTS_FLAT_SOURCE,
         type: 'circle',
         source: MISSION_WAYPOINTS_FLAT_SOURCE,
-        ...flat,
         paint: { 'circle-radius': 4, 'circle-color': '#9f6fff' },
       })
 
@@ -492,12 +547,12 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       // pointed in its actual heading — same fill-extrusion trick, see
       // flightMapGeo.ts. From FLAT_OVERLAY_MAX_ZOOM in only; further out an
       // HTML marker (createAircraftElement) stands in.
-      map.addSource(AIRCRAFT_MARKER_SOURCE, { type: 'geojson', data: aircraftGeoJson(map, vehicleStateRef.current) })
+      map.addSource(AIRCRAFT_MARKER_SOURCE, { type: 'geojson', ...OVERLAY_3D_SOURCE, data: aircraftGeoJson(map, vehicleStateRef.current) })
       map.addLayer({
         id: AIRCRAFT_MARKER_SOURCE,
         type: 'fill-extrusion',
         source: AIRCRAFT_MARKER_SOURCE,
-        minzoom: FLAT_OVERLAY_MAX_ZOOM,
+        layout: { visibility: 'none' }, // by camera zoom: syncZoomLayers
         paint: {
           'fill-extrusion-color': '#00d4ff',
           'fill-extrusion-height': ['get', 'top'],
@@ -506,6 +561,10 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
         },
       })
 
+      syncZoomLayers(map)
+      if (map.getSource(BUILDINGS_SOURCE)) {
+        map.setSourceTileLodParams(BUILDINGS_TILE_LOD.maxZoomLevelsOnScreen, BUILDINGS_TILE_LOD.tileCountMaxMinRatio, BUILDINGS_SOURCE)
+      }
       loadedRef.current = true
     })
 
@@ -517,6 +576,7 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
     map.on('zoom', () => {
       if (aircraftMarkerRef.current) syncFlatAircraftVisibility(map, aircraftMarkerRef.current)
       if (!loadedRef.current) return
+      syncZoomLayers(map)
       const metersPerPx = viewMetersPerPx(map)
       if (Math.abs(metersPerPx / lastZoomMetersPerPxRef.current - 1) < 0.05) return
       lastZoomMetersPerPxRef.current = metersPerPx
@@ -594,6 +654,11 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
         .addTo(map)
     }
 
+    // No fix, no position: a flight controller that hasn't got one yet
+    // reports 0°, 0°, and drawing it would centre the map off Africa and
+    // trail a line from there once the real position arrives.
+    if (vehicleState.gps.fixType === 'none') return
+
     if (!hasCenteredRef.current) {
       map.jumpTo({ center: [point.lon, point.lat], zoom: 16 })
       hasCenteredRef.current = true
@@ -626,9 +691,11 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
   }
 
   /** First click squares the camera up (north-up, straight down); once
-   * already square, the next click centers on the drone instead — checked
-   * against the map's actual current orientation, not a separate counter, so
-   * it stays correct even if the user re-tilts by hand in between clicks. */
+   * already square, the next click centers on the drone, zoomed so the whole
+   * mission is in view (or zoom 15 on the drone when the mission is too big
+   * for that to be useful, zoomToShowMission). Checked against the map's
+   * actual current orientation, not a separate counter, so it stays correct
+   * even if the user re-tilts by hand in between clicks. */
   function handleRecenter() {
     const map = mapRef.current
     if (!map) return
@@ -637,7 +704,12 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
     if (!isSquare) {
       map.easeTo({ pitch: 0, bearing: 0, duration: 400 })
     } else if (vehicleState) {
-      map.easeTo({ center: [vehicleState.position.lon, vehicleState.position.lat], duration: 400 })
+      const drone = { lat: vehicleState.position.lat, lon: vehicleState.position.lon }
+      const container = map.getContainer()
+      const zoom = zoomToShowMission(drone, mission, vehicleState.home, {
+        viewportPx: { width: container.clientWidth, height: container.clientHeight },
+      })
+      map.easeTo({ center: [drone.lon, drone.lat], zoom, duration: 600 })
     }
   }
 
@@ -673,7 +745,7 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       <button
         type="button"
         onClick={handleRecenter}
-        aria-label="Square up the camera, then center on the drone"
+        aria-label="Square up the camera, then center on the drone with its mission in view"
         className="glass-panel absolute right-4 top-24 z-10 flex h-8 w-8 items-center justify-center transition hover:ring-2 hover:ring-primary"
       >
         <LocateFixed size={14} style={{ color: 'var(--primary)' }} aria-hidden />

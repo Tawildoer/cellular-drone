@@ -1,0 +1,10 @@
+services:
+  sitl:
+    build: .
+    image: cellular-drone-sitl
+    ports:
+      - "5760:5760" # agent
+      - "5762:5762" # ground-station tool alongside it
+    environment:
+      SITL_HOME: "-37.861,145.062,50,0"
+      SITL_SPEEDUP: "1"

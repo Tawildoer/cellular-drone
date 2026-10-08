@@ -1,0 +1,38 @@
+# cellular-drone overrides on top of ArduPilot's quadplane.parm.
+# Safety model: docs/ARCHITECTURE.md, ADR-0008. Mapping: docs/MAVLINK.md.
+
+# The link never changes what the aircraft does (ADR-0020): no GCS failsafe.
+# A pause the link leaves behind is ended by scripts/pause_resume.lua.
+# Battery failsafe, geofence and the RC pilot still protect it.
+FS_GCS_ENABL    0
+# RC loss in AUTO continues the mission; outside AUTO it RTLs, landing
+# vertically (Q_RTL_MODE). ADR-0008.
+FS_SHORT_ACTN   0
+FS_LONG_ACTN    0
+THR_FAILSAFE    1
+Q_RTL_MODE      1
+
+# Resume the current item after a pause, don't restart the mission.
+MIS_RESTART     0
+
+# Cruise stays at quadplane.parm's 25 m/s: 18 m/s (the mock's figure) sits
+# on Q_ASSIST_SPEED, so VTOL assist kept cutting in. SITL is the reference
+# (ADR-0017): the mock gets tuned to it, not the other way round.
+WP_LOITER_RAD   60
+
+# A waypoint counts as reached within this distance, and ArduPlane starts
+# its turn there. The default 90 m cut corners visibly (reached 82 m short
+# in SITL). 30 m is about the tightest turn at 25 m/s with ROLL_LIMIT_DEG 65,
+# so smaller would just overshoot and loop back. Tune on the real airframe.
+WP_RADIUS       30
+RTL_ALTITUDE    60
+
+# Fence: off until the agent uploads one with a mission (ADR-0017).
+FENCE_ENABLE    0
+
+# Lua scripting, for scripts/loiter_until.lua (clock-mode loiters, ADR-0017).
+# The real aircraft needs an H7 flight controller for this (ADR-0002).
+SCR_ENABLE      1
+
+# SITL's simulated battery, so voltage and remaining % are reported.
+BATT_MONITOR    4

@@ -55,7 +55,7 @@ export function createVehicleStore(linkOrResolver: VehicleLink | VehicleLinkReso
   let link: VehicleLink | null = null
   let unsubscribers: (() => void)[] = []
 
-  return createStore<VehicleStoreState>((set) => ({
+  return createStore<VehicleStoreState>((set, get) => ({
     connectionState: 'disconnected',
     vehicleState: null,
     linkStatus: null,
@@ -68,27 +68,38 @@ export function createVehicleStore(linkOrResolver: VehicleLink | VehicleLinkReso
 
     async connect(vehicleId) {
       unsubscribers.forEach((unsubscribe) => unsubscribe())
-      link = resolve(vehicleId)
+      const current = resolve(vehicleId)
+      link = current
+
+      // Adopt whatever the vehicle is already flying each time the link
+      // becomes connected (first connect and every reconnect), so joining a
+      // drone mid-mission shows its actual route. Waits for "connected"
+      // because some links (WebRTC) resolve connect() before they can carry
+      // requests. If this page uploads a mission meanwhile, that one wins.
+      const adoptVehicleMission = async () => {
+        const before = get().missionOnVehicle
+        const onVehicle = await current.downloadMission()
+        if (!onVehicle || link !== current || get().missionOnVehicle !== before) return
+        // A downloaded mission comes without a readback; drop any stale one.
+        set({ missionOnVehicle: onVehicle, missionOnVehicleReadback: null })
+      }
+
       unsubscribers = [
         link.onState((vehicleState) => set({ vehicleState })),
-        link.onLinkStatus((linkStatus) =>
+        link.onLinkStatus((linkStatus) => {
+          const wasConnected = get().connectionState === 'connected'
           set((s) => ({
             linkStatus,
             connectionState: linkStatus.state,
             linkHistory: appendLinkHistory(s.linkHistory, linkStatus, Date.now()),
-          })),
-        ),
+          }))
+          if (linkStatus.state === 'connected' && !wasConnected) void adoptVehicleMission()
+        }),
         link.onEvent((event) => set((s) => ({ events: [...s.events, event].slice(-MAX_EVENTS) }))),
         link.onVideoStream((videoStream) => set({ videoStream })),
       ]
       set({ activeLink: link })
       await link.connect(vehicleId)
-      // Adopt whatever the vehicle is already flying, so connecting to a drone
-      // mid-mission (e.g. the auto-flying demo drone) shows its actual route,
-      // not an empty map.
-      const current = await link.downloadMission()
-      // A downloaded mission comes without a readback; drop any stale one.
-      if (current) set({ missionOnVehicle: current, missionOnVehicleReadback: null })
     },
 
     async disconnect() {

@@ -28,7 +28,7 @@ Order: **frontend first against a mock vehicle**, then the real backend undernea
 - [x] `services/`: `AuthClient` (mock) + `MissionRepository` (localStorage)
 - [ ] UI: login → vehicle list → flight screen (map, HUD, video, link badge, RC override banner, event log)
 - [ ] UI: mission planner (tap to add, VTOL takeoff/land items, inline validation, save and load)
-- [ ] Fence validation checks legs and loiter circles, not just item points (ADR-0017)
+- [x] Fence validation checks legs and loiter circles, not just item points (ADR-0017, 2026-10-07)
 - [x] Planner: ArduPilot mission panel (preview rows, issues, vehicle readback match) and `.waypoints` export (ADR-0017 addendum, 2026-10-07)
 - [ ] UI: preflight checklist gate + command bar with hold/slide-to-confirm
 - [ ] Dev panel for MockLink fault injection
@@ -39,17 +39,19 @@ Order: **frontend first against a mock vehicle**, then the real backend undernea
 
 ### 1b: SITL + drone agent
 Do this before new planner features (ADR-0017). Mapping reference: `docs/MAVLINK.md`.
-- [ ] `sim/`: ArduPlane SITL in Docker with a QuadPlane frame. MAVLink exposed over TCP/UDP.
+- [x] `sim/`: ArduPlane SITL in Docker with a QuadPlane frame. MAVLink exposed over TCP/UDP. (2026-10-07: Plane-4.7.1, ports 5760/5762, `sim/README.md`)
 - [ ] `agent/` (Go, Pion WebRTC):
-  - [ ] MAVLink2 connection (serial or UDP) → map into `protocol/` messages (`VehicleState`, events). Mode mapping → app `FlightMode`.
+  - [x] MAVLink2 connection (serial or TCP) → map into `protocol/` messages (`VehicleState`, events). Mode mapping → app `FlightMode`. (`internal/fc`, `-fc` flag)
   - [x] Mission translation rules per `docs/MAVLINK.md`, as code: Go `agent/internal/mission` (authoritative) + TS preview `web/src/ardupilot`, both held to `testdata/mission-translation/` (2026-10-07)
-  - [ ] Wire `mission.Translate` into the agent's `mission.upload`: MAVLink upload with retries, readback into `onVehicle`, seq ↔ app index for `MISSION_CURRENT`, fence upload + `FENCE_ALT_MAX`, stored mission identity
-  - [ ] Decide clock-mode loiter (ADR-0017 open item)
-  - [ ] Fly the same missions in MockLink and SITL; tune the mock to SITL (waypoint reached, RTL altitude, turn radius, cruise speed)
+  - [x] Wire `mission.Translate` into the agent's `mission.upload`: MAVLink upload with retries, readback into `onVehicle`, seq ↔ app index for `MISSION_CURRENT`, fence upload + `FENCE_ALT_MAX`, stored mission identity (and adopting a mission already on the FC)
+  - [x] Decide clock-mode loiter: Lua script on the FC, `sim/scripts/loiter_until.lua`, proven in SITL (ADR-0017)
+  - [ ] Fly the same missions in MockLink and SITL; tune the mock to SITL (waypoint reached, RTL altitude, turn radius, cruise speed: SITL cruises at 25 m/s, see docs/MAVLINK.md)
+  - [ ] Fly a mission from the browser through WebRtcLink → agent → SITL: written as `web/e2e-sitl` (`npm run e2e:sitl`), flight + RC takeover; not run yet
+  - [ ] More SITL scenarios: browser closed mid-mission, agent killed mid-flight, mission changed from another ground station
   - [ ] Data channels: `telemetry` (unreliable) and `control` (reliable), carrying the **same `protocol/` v1 messages** as MockLink
-  - [ ] Command whitelist and safety gate. Mission upload, download and verify state machine.
-  - [ ] GCS heartbeat only while a commander session is alive (this drives the FC failsafe)
-  - [ ] RC-override awareness: report RC link and mode-switch state; refuse browser mode changes while RC holds a manual mode
+  - [x] Command whitelist and safety gate. Mission upload, download and verify state machine. (Flown end to end in SITL by `cmd/sitlcheck`; not yet from a browser)
+  - [x] GCS heartbeat only while a commander session is alive (this drives the FC failsafe). (Any session with an open control channel counts; one-commander rule still to do)
+  - [~] RC-override awareness: report RC link and mode-switch state; refuse browser mode changes while RC holds a manual mode. (Detects a pilot mode the agent didn't command; reading the actual switch position via `FLTMODE_CH` is still to do)
   - [ ] Video track: test pattern in SITL mode
   - [ ] Local command and flight log (JSONL)
   - [ ] WSS client to signalling with a per-drone key; verify the Ed25519 session token before answering an offer
@@ -82,9 +84,11 @@ Do this before new planner features (ADR-0017). Mapping reference: `docs/MAVLINK
 - [ ] Record each run's results (path, setup time, recovery time, RTT, bitrate) in `docs/DECISIONS.md`
 
 ## Phase 2: Air unit on the bench
-- [ ] Radxa Zero 3W: flash a minimal Debian/Armbian. Cross-compile the agent (`GOARCH=arm64`). Run it as a systemd service.
+- [ ] Orange Pi 5 (ADR-0018): flash a minimal Debian/Armbian. Cross-compile the agent (`GOARCH=arm64`). Run it as a systemd service.
 - [ ] Bring up the LTE modem: ModemManager/NetworkManager, APN, reconnect watchdog. Report signal metrics (RSRP, SINR, band) as telemetry.
-- [ ] Camera: MIPI CSI or USB. Hardware H.264 through the RK MPP encoder (GStreamer `mpph264enc`) into Pion. Measure latency, bitrate and CPU.
+- [ ] Gimbal camera: forward its Ethernet H.264/H.265 into the Pion track without transcoding. Measure glass-to-glass latency.
+- [ ] Aux cameras: hardware H.264 through the RK MPP encoder (GStreamer `mpph264enc`) into Pion; switch the one live stream between gimbal and aux cameras. Measure latency, bitrate and CPU.
+- [ ] CV cameras: capture into an RKNN model on the NPU; send results (not video) to the browser. Measure CPU, NPU load and power.
 - [ ] UART to the FC (MAVLink2, 921600 baud). `SERIALx_PROTOCOL=2`.
 - [ ] Power: a 5 V 3 A BEC, plus a capacitor near the modem for TX peaks. Measure total draw.
 - [ ] Measure how often LTE CGNAT forces TURN vs direct. Record it in `docs/DECISIONS.md`.
@@ -100,7 +104,7 @@ Do this before new planner features (ADR-0017). Mapping reference: `docs/MAVLINK
 **Exit:** reliable VTOL takeoff, transition and landing under RC.
 
 ## Phase 4: Autonomous missions from the browser, VLOS with a safety pilot
-- [ ] Set the failsafes: `FS_GCS_ENABL`, `FS_LONG_ACTN`, `Q_RTL_MODE`, geofence, battery
+- [ ] Set the failsafes: `FS_GCS_ENABL 0` (ADR-0020), `FS_LONG_ACTN`, `Q_RTL_MODE`, geofence, battery. Install `pause_resume.lua` and `loiter_until.lua` on the FC
 - [ ] Bench test: pull the modem mid-mission and check the response
 - [ ] Configure and test the RC override (ADR-0008): mode-switch takeover mid-mission, hand back to AUTO, and RC loss in AUTO continues the mission
 - [ ] Short, low missions started from the browser, with the RC pilot ready to take over
@@ -116,6 +120,11 @@ Do this before new planner features (ADR-0017). Mapping reference: `docs/MAVLINK
 - [ ] VPS monitoring and alerts
 - [ ] Optional: port the agent to an OpenIPC SoC (SSC338Q) to save weight and power (ADR-0006)
 - [ ] BVLOS operational case, if you pursue it
+- [ ] Obstacle avoidance (ADR-0019), each stage proven in SITL first:
+  - [ ] Stage 2 groundwork, possible now: the agent injects synthetic `OBSTACLE_DISTANCE` into SITL; record which QuadPlane modes avoid
+  - [ ] Stage 1: aux-camera detection on the NPU, detections and avoidance health shown in the browser (flight unaffected)
+  - [ ] Stage 2: real proximity data from the vision pipeline into the FC
+  - [ ] Stage 3: escape actions (LOITER/QLOITER, RTL, QLAND) where the FC can't avoid itself, blocked under RC override, can be turned off per mission; later as a Lua script on the FC
 
 **Exit:** a production-ready system that meets your local regulatory requirements.
 

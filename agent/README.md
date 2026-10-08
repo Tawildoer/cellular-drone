@@ -1,10 +1,14 @@
 # agent
 
-The drone-side WebRTC peer (Go + Pion). For now it's the link slice from
-ADR-0014 / `docs/P2P_TESTING.md`: it answers browser offers via the
-signalling server (`../server`), streams a test-pattern video track and
-placeholder telemetry, refuses commands (no flight controller yet), and logs
-ICE state and the selected candidate pair as JSONL.
+The drone-side WebRTC peer (Go + Pion). It answers browser offers via the
+signalling server (`../server`), streams a video track, and logs ICE state
+and the selected candidate pair as JSONL.
+
+With `-fc` it talks MAVLink2 to an ArduPlane flight controller
+(`internal/fc`, docs/MAVLINK.md): real telemetry and events, whitelisted
+commands, and mission upload with readback, translated by
+`internal/mission`. Without `-fc` it's the link slice from ADR-0014: stub
+telemetry, every command refused.
 
 ## Build
 
@@ -27,6 +31,13 @@ cd agent && ./bin/agent \
 cd web && VITE_VEHICLE_LINK=webrtc npm run dev  # then open the app and pick Drone 1
 ```
 
+## Run against ArduPlane SITL
+
+See `../sim/README.md`. In short: `docker compose up -d` in `sim/`, then
+`go run ./cmd/sitlcheck` for a scripted flight with no browser, or
+`go run ./cmd/agent -fc tcp:127.0.0.1:5760 -video-cmd ""` to fly it from
+the browser.
+
 ## Run on the Raspberry Pi 5
 
 Raspberry Pi OS (64-bit). The Pi 5 has no hardware H.264 encoder, so video
@@ -46,6 +57,7 @@ reading glass-to-glass latency off the browser.
 
 | Flag | Default | |
 | --- | --- | --- |
+| `-fc` | none (link-test mode) | flight controller: `tcp:HOST:PORT` (SITL) or `serial:DEVICE:BAUD` |
 | `-signal` | `ws://localhost:8788/signal` | signalling server |
 | `-vehicle` | `drone-1` | id the browser connects to |
 | `-stun` | Google STUN | comma-separated STUN/TURN URLs |

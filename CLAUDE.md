@@ -13,14 +13,14 @@ A fixed-wing **VTOL (ArduPlane QuadPlane)** that flies **autonomous missions onl
 ## Key facts
 - Transport: **WebRTC between the drone agent and the browser**. Peer-to-peer when possible, coturn TURN fallback (cellular CGNAT). Video track is H.264. Data channels: `telemetry` (unreliable) and `control` (reliable).
 - VPS = auth + signalling + STUN/TURN + web hosting + mission and log storage. It does **not** proxy MAVLink or video in application code.
-- Air unit: **Radxa Zero 3W** running `agent/` (Go + Pion), USB LTE modem (Quectel), MIPI or USB camera, UART MAVLink2 to the FC.
+- Air unit: **Orange Pi 5 (RK3588S)** running `agent/` (Go + Pion), USB LTE modem (Quectel), UART MAVLink2 to the FC (ADR-0018, replaces the Radxa Zero 3W). Cameras: a 2-axis **gimbal camera** (the one live stream by default), plus **aux cameras** the operator can cycle the stream to, plus **CV cameras** that stay onboard (results only go to the browser). Only one video stream crosses the cellular link at a time.
 - FC: ArduPilot ArduPlane QuadPlane. Failsafes, geofence and RTL/QLAND live on the FC. A **local ELRS radio can always override** (permanent feature, ADR-0008): flipping the RC mode switch takes control at any point, and losing RC range must NOT abort an autonomous mission.
 - The **drone agent enforces the command whitelist** and verifies the server-signed (Ed25519) session tokens. Never pass manual control over the cellular link (no MAVLink `RC_CHANNELS_OVERRIDE`, `MANUAL_CONTROL`, or attitude/velocity setpoints from the browser). The physical ELRS radio is the only manual path.
 - QuadroFleet / OpenIPC 4G was the original inspiration and is no longer a dependency (ADR-0005). An OpenIPC port of the agent is a possible later optimisation.
 
 ## Repo layout
 - `sim/`: ArduPlane SITL (Docker)
-- `agent/`: drone agent (Go). Runs on a laptop against SITL, or on the Radxa.
+- `agent/`: drone agent (Go). Runs on a laptop against SITL, or on the Orange Pi 5 (Pi 5 stand-in for link work, ADR-0014).
 - `mock-agent/`: dev-only standalone Node process standing in for `agent/` (ADR-0012) — runs the same simulated-VTOL engine as `MockLink`, behind a WebSocket, so the drone's state survives browser reloads. Not the real agent.
 - `server/`: auth + signalling + API (TypeScript/Node 24), docker-compose, Caddy, coturn
 - `web/`: React + Vite + TS frontend (MapLibre), laptop-primary for now (operator's base station); phone layout deferred, same components

@@ -1,5 +1,5 @@
 {
-  "description": "No home yet, a clock-mode loiter (no native equivalent, becomes LOITER_UNLIM), a waypoint with the default accept radius, RTL ending.",
+  "description": "No home yet, a clock-mode loiter (no native equivalent: LOITER_UNLIM plus a DO_SEND_SCRIPT_MESSAGE marker, id 7301, end time 05:30 UTC, for loiter_until.lua; later rows shift by one), a waypoint with the default accept radius, RTL ending.",
   "home": null,
   "mission": {
     "id": "golden-clock",
@@ -18,8 +18,9 @@
       { "seq": 0, "command": 16, "frame": 0, "params": [0, 0, 0, 0], "lat": 0, "lon": 0, "altM": 0, "appIndex": null },
       { "seq": 1, "command": 84, "frame": 3, "params": [0, 0, 0, 0], "lat": 0, "lon": 0, "altM": 60, "appIndex": 0 },
       { "seq": 2, "command": 17, "frame": 3, "params": [0, 0, 150, 0], "lat": -37.85, "lon": 145.07, "altM": 90, "appIndex": 1 },
-      { "seq": 3, "command": 16, "frame": 3, "params": [0, 0, 0, 0], "lat": -37.855, "lon": 145.068, "altM": 80, "appIndex": 2 },
-      { "seq": 4, "command": 20, "frame": 3, "params": [0, 0, 0, 0], "lat": 0, "lon": 0, "altM": 0, "appIndex": 3 }
+      { "seq": 3, "command": 217, "frame": 2, "params": [7301, 330, 0, 0], "lat": 0, "lon": 0, "altM": 0, "appIndex": null },
+      { "seq": 4, "command": 16, "frame": 3, "params": [0, 0, 0, 0], "lat": -37.855, "lon": 145.068, "altM": 80, "appIndex": 2 },
+      { "seq": 5, "command": 20, "frame": 3, "params": [0, 0, 0, 0], "lat": 0, "lon": 0, "altM": 0, "appIndex": 3 }
     ],
     "fence": [],
     "params": {},

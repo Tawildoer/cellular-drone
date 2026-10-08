@@ -135,6 +135,32 @@ type StatusEvent struct {
 	TS   int64  `json:"ts"`
 }
 
+// The other telemetry.event kinds (vehicleEventSchema in schemas.ts).
+type FailsafeEvent struct {
+	Kind   string `json:"kind"` // always "failsafe"
+	Flag   string `json:"flag"` // gcs | battery | geofence | rc
+	Active bool   `json:"active"`
+	TS     int64  `json:"ts"`
+}
+
+type ModeChangedEvent struct {
+	Kind string `json:"kind"` // always "modeChanged"
+	Mode string `json:"mode"`
+	TS   int64  `json:"ts"`
+}
+
+type RCOverrideEvent struct {
+	Kind   string `json:"kind"` // always "rcOverride"
+	Active bool   `json:"active"`
+	TS     int64  `json:"ts"`
+}
+
+// Command is the browser's cmd.request payload (commandSchema in schemas.ts).
+type Command struct {
+	Type   string `json:"type"`
+	Preset string `json:"preset,omitempty"`
+}
+
 type MissionUploaded struct {
 	MissionID string        `json:"missionId"`
 	Result    CommandResult `json:"result"`

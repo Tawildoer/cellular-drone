@@ -30,11 +30,14 @@ A small VPS still exists, but **media and MAVLink don't pass through application
 flowchart LR
   subgraph AIR["Air unit (on drone)"]
     FC["Flight controller<br/>ArduPlane QuadPlane"]
-    SBC["Companion: Radxa Zero 3W<br/>drone-agent (Go + Pion)<br/>- MAVLink UART<br/>- H.264 HW encode<br/>- WebRTC peer<br/>- command whitelist / safety gate"]
-    CAMS["Camera (MIPI CSI or USB)"]
+    SBC["Companion: Orange Pi 5 (RK3588S)<br/>drone-agent (Go + Pion)<br/>- MAVLink UART<br/>- H.264/H.265 HW encode<br/>- NPU: onboard computer vision<br/>- WebRTC peer<br/>- command whitelist / safety gate"]
+    GIMBAL["2-axis gimbal camera<br/>(own encoder, Ethernet)"]
+    CAMS["Aux + CV cameras<br/>(MIPI CSI or USB)"]
     MODEM["LTE modem (USB)<br/>Quectel EC25 / EG25-G"]
     RC["ELRS RX<br/>(RC override, always available)"]
     FC <-- "UART: MAVLink2" --> SBC
+    GIMBAL -- "H.264/H.265 over Ethernet" --> SBC
+    FC -. "gimbal control (MAVLink)" .-> GIMBAL
     CAMS --> SBC
     SBC <-- USB --> MODEM
     RC --> FC
@@ -89,7 +92,8 @@ No RC override, no `MANUAL_CONTROL`, no direct attitude or velocity setpoints. T
 ## Safety model
 
 - **The aircraft must be safe with no link.** ArduPilot flies the mission. The link is for supervision only.
-- **GCS failsafe on the FC:** the agent sends heartbeats only while a browser session is active. Losing the browser or the LTE link triggers `FS_GCS_ENABL` → continue the mission, or RTL into a VTOL landing (configurable per mission).
+- **The link never changes what the aircraft does (ADR-0020).** It's for planning and watching. The whole mission is uploaded before flight and flown from the FC's own memory; nothing streams up during it. There is no GCS failsafe (`FS_GCS_ENABL 0`): connecting, disconnecting or losing LTE has no effect on the flight. Only explicit commands (pause, resume, RTL, QLAND) change it.
+- **Pauses can't strand the aircraft.** A browser pause ends by itself after 120 s, when `pause_resume.lua` on the FC resumes the mission. Any resume rejoins the planned leg rather than flying a new line from wherever the aircraft is.
 - Geofence (`FENCE_*`), altitude limits and the battery failsafe are all **on the FC**.
 - **RC override is always available** (ADR-0008). See the next section.
 
@@ -99,14 +103,16 @@ An ELRS receiver is wired directly to the FC, and it **always** has authority ov
 
 - **Taking over:** ArduPilot changes mode when the RC mode switch *changes position*. The pilot flips the switch to FBWA, QHOVER or QLOITER (or RTL/QLAND), and that takes over at once, whatever the browser commanded. The browser then sees the mode change and the "RC override active" flag in telemetry.
 - **Handing back:** the pilot switches back to AUTO on the radio, or the browser sends `mode.resume` once the operator acknowledges it. The browser *cannot* leave a manual mode the pilot picked unless the pilot releases it. The agent refuses mode commands while the RC switch is in a manual position.
-- **RC failsafe must not abort autonomy.** Beyond radio range the RC link is normally lost. Set `FS_LONG_ACTN` and `THR_FAILSAFE` so that losing RC **in AUTO continues the mission**. GCS (cellular) loss is handled separately by `FS_GCS_ENABL`. Losing both links while not in AUTO → RTL with a VTOL landing.
+- **RC failsafe must not abort autonomy.** Beyond radio range the RC link is normally lost. Set `FS_LONG_ACTN` and `THR_FAILSAFE` so that losing RC **in AUTO continues the mission**. Losing the cellular link does nothing (ADR-0020). Losing RC while not in AUTO → RTL with a VTOL landing.
 - **Pre-flight check:** the RC link is present and the mode switch is in the AUTO position before a mission starts from the browser. The agent checks this.
 - The RC link is not routed through the companion computer, so an agent, modem or VPS failure can't affect it.
 - MAVLink2 signing between the agent and the FC, to be added during hardening.
 
 ## Video
 
-- Hardware H.264 on the Radxa (RK3566). Start at 720p30 and 1–2 Mbps, adaptive via WebRTC congestion feedback.
+- **One live stream** over the cellular link at a time (ADR-0018): the gimbal camera by default, or an aux camera the operator cycles to. CV cameras never stream; their results go over the `telemetry`/`control` channels.
+- The gimbal camera encodes itself (H.264/H.265 over Ethernet), and the agent forwards it into the WebRTC track without transcoding. Aux cameras use the Orange Pi 5's hardware encoder (RK3588S, GStreamer `mpph264enc`).
+- Start at 720p30 and 1–2 Mbps, adaptive via WebRTC congestion feedback.
 - If the uplink is poor, drop resolution first, then frame rate. Telemetry always takes priority over video.
 - Option: record full quality onboard (to SD) and upload it after landing.
 

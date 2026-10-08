@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { Mission } from '../../domain'
+import type { CommandResult, LinkStatus, Mission, MissionUploadResult } from '../../domain'
+import type { VehicleLink } from '../../link'
 import { MockLink } from '../../link/mock'
 import { createVehicleStore } from '../vehicleStore'
 
@@ -99,5 +100,117 @@ describe('vehicleStore', () => {
     const store = createVehicleStore(new MockLink())
     const result = await store.getState().send({ type: 'arm' })
     expect(result).toEqual({ ok: false, reason: 'not_connected' })
+  })
+})
+
+/** A link like WebRtcLink: connect() returns before the link can carry
+ * requests, and it reports "connected" later, from its own events. */
+class LateConnectingLink implements VehicleLink {
+  private statusListeners = new Set<(s: LinkStatus) => void>()
+  connected = false
+  onVehicle: Mission | null = null
+
+  async connect() {
+    this.emit({ state: 'connecting' })
+  }
+  async disconnect() {
+    this.connected = false
+    this.emit({ state: 'disconnected' })
+  }
+  becomeConnected() {
+    this.connected = true
+    this.emit({ state: 'connected' })
+  }
+  private emit(status: LinkStatus) {
+    this.statusListeners.forEach((cb) => cb(status))
+  }
+  onLinkStatus(cb: (s: LinkStatus) => void) {
+    this.statusListeners.add(cb)
+    return () => this.statusListeners.delete(cb)
+  }
+  onState() {
+    return () => {}
+  }
+  onEvent() {
+    return () => {}
+  }
+  onVideoStream() {
+    return () => {}
+  }
+  getVideoStream() {
+    return null
+  }
+  async send(): Promise<CommandResult> {
+    return { ok: true }
+  }
+  async uploadMission(m: Mission): Promise<MissionUploadResult> {
+    this.onVehicle = m
+    return { ok: true }
+  }
+  async downloadMission() {
+    // Like WebRtcLink before its control channel opens: nothing to ask.
+    return this.connected ? this.onVehicle : null
+  }
+}
+
+describe('vehicleStore adopting the vehicle mission', () => {
+  const flying: Mission = {
+    id: 'already-flying',
+    name: 'Already flying',
+    items: [{ type: 'vtolTakeoff', altM: 40 }, { type: 'returnToLaunch' }],
+    createdAt: 1,
+    updatedAt: 1,
+  }
+
+  it("fetches it once the link is actually connected, not when connect() returns", async () => {
+    const link = new LateConnectingLink()
+    link.onVehicle = flying
+    const store = createVehicleStore(link)
+
+    await store.getState().connect('drone-1')
+    expect(store.getState().missionOnVehicle).toBeNull()
+
+    link.becomeConnected()
+    await waitFor(() => store.getState().missionOnVehicle !== null)
+    expect(store.getState().missionOnVehicle).toEqual(flying)
+  })
+
+  it('fetches it again after a reconnect', async () => {
+    const link = new LateConnectingLink()
+    const store = createVehicleStore(link)
+    await store.getState().connect('drone-1')
+    link.becomeConnected()
+    await delay(10)
+    expect(store.getState().missionOnVehicle).toBeNull()
+
+    // Dropped, and meanwhile someone else gave the vehicle a mission.
+    link.connected = false
+    store.setState({ connectionState: 'degraded' })
+    link.onVehicle = flying
+    link.becomeConnected()
+    await waitFor(() => store.getState().missionOnVehicle !== null)
+    expect(store.getState().missionOnVehicle?.id).toBe('already-flying')
+  })
+
+  it("doesn't overwrite a mission this page uploaded meanwhile", async () => {
+    const link = new LateConnectingLink()
+    link.onVehicle = flying
+    let release: () => void = () => {}
+    const slow = new Promise<void>((resolve) => (release = resolve))
+    const download = link.downloadMission.bind(link)
+    link.downloadMission = async () => {
+      const result = await download()
+      await slow
+      return result
+    }
+    const store = createVehicleStore(link)
+    await store.getState().connect('drone-1')
+    link.becomeConnected()
+
+    const mine = { ...flying, id: 'mine', name: 'Mine' }
+    await store.getState().uploadMission(mine)
+    release()
+    await delay(10)
+    expect(store.getState().missionOnVehicle?.id).toBe('mine')
   })
 })

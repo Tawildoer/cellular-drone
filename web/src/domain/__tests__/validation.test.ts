@@ -125,6 +125,75 @@ describe('validateMission', () => {
   })
 })
 
+describe('validateMission fence paths', () => {
+  // A U-shaped (concave) fence: two arms joined along the bottom, with a
+  // notch between them above lat 1.
+  const uFence = {
+    polygon: [
+      { lat: 0, lon: 0 },
+      { lat: 0, lon: 3 },
+      { lat: 3, lon: 3 },
+      { lat: 3, lon: 2 },
+      { lat: 1, lon: 2 },
+      { lat: 1, lon: 1 },
+      { lat: 3, lon: 1 },
+      { lat: 3, lon: 0 },
+    ],
+  }
+
+  it('flags a leg between two inside points that cuts across the notch', () => {
+    const result = validateMission(
+      mission(
+        [
+          { type: 'vtolTakeoff', altM: 50 },
+          { type: 'waypoint', lat: 2, lon: 0.5, altM: 50 },
+          { type: 'waypoint', lat: 2, lon: 2.5, altM: 50 },
+          { type: 'returnToLaunch' },
+        ],
+        { fence: uFence },
+      ),
+    )
+    expect(result.issues).toEqual([{ itemIndex: 2, message: 'The leg from item 2 crosses the geofence' }])
+  })
+
+  it('accepts a leg that goes around the notch', () => {
+    const result = validateMission(
+      mission(
+        [
+          { type: 'vtolTakeoff', altM: 50 },
+          { type: 'waypoint', lat: 2, lon: 0.5, altM: 50 },
+          { type: 'waypoint', lat: 0.5, lon: 0.5, altM: 50 },
+          { type: 'waypoint', lat: 0.5, lon: 2.5, altM: 50 },
+          { type: 'waypoint', lat: 2, lon: 2.5, altM: 50 },
+          { type: 'returnToLaunch' },
+        ],
+        { fence: uFence },
+      ),
+    )
+    expect(result.valid).toBe(true)
+  })
+
+  it('flags a loiter circle that reaches past the fence, not one that fits', () => {
+    const loiterAt = (radiusM: number) =>
+      validateMission(
+        mission(
+          [
+            { type: 'vtolTakeoff', altM: 50 },
+            // ~55 km from the bottom edge (lat 0).
+            { type: 'loiter', lat: 0.5, lon: 1.5, altM: 50, radiusM, turns: 1 },
+            { type: 'returnToLaunch' },
+          ],
+          { fence: uFence },
+        ),
+      )
+
+    expect(loiterAt(60_000).issues).toEqual([
+      { itemIndex: 1, message: 'The 60000m loiter circle reaches outside the geofence' },
+    ])
+    expect(loiterAt(1_000).valid).toBe(true)
+  })
+})
+
 describe('estimateMissionEtaS', () => {
   it('is Infinity at zero speed', () => {
     const m = mission([{ type: 'vtolTakeoff', altM: 50 }, { type: 'returnToLaunch' }])

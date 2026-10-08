@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Mission } from '../../../domain'
-import { haversineDistanceM } from '../../../domain'
+import { fromLocalEastNorthM, haversineDistanceM } from '../../../domain'
 import {
   AIRCRAFT_MARKER_MIN_PX,
   aircraftMarkerScale,
@@ -17,6 +17,7 @@ import {
   buildTrailLineGeoJson,
   isLappingCurrentLoiter,
   metersPerPixel,
+  zoomToShowMission,
   MAX_TRAIL_POINTS,
   type AltitudePoint,
 } from '../flightMapGeo'
@@ -605,6 +606,16 @@ describe('flat (zoomed-out) overlays', () => {
     expect(legs[0]?.geometry.coordinates[1]).toEqual([0.02, 0])
   })
 
+  it('keeps the current leg on the planned line when the drone is off it', () => {
+    // The dashed path is the fixed ideal route; the aircraft moving off it
+    // (wind, a pause) trims it by along-track progress, never drags it along.
+    const offLeg = { lat: -0.001, lon: 0.015 } // ~110 m south, halfway along
+    const legs = buildMissionPathLinesGeoJson(twoLegs(), home, 2, offLeg).features
+    expect(legs[0]?.geometry.coordinates[0]?.[0]).toBeCloseTo(0.015, 6)
+    expect(legs[0]?.geometry.coordinates[0]?.[1]).toBeCloseTo(0, 9) // still on the leg, not at the drone
+    expect(legs[0]?.geometry.coordinates[1]).toEqual([0.02, 0])
+  })
+
   it('draws each loiter as a closed circle at its radius', () => {
     const ring = buildMissionLoiterRingLinesGeoJson(twoLegs()).features[0]?.geometry.coordinates ?? []
     expect(ring[0]).toEqual(ring[ring.length - 1])
@@ -612,5 +623,39 @@ describe('flat (zoomed-out) overlays', () => {
       expect(haversineDistanceM({ lat: lat ?? 0, lon: lon ?? 0 }, { lat: 0, lon: 0.02 })).toBeCloseTo(80, 0)
     }
     expect(buildMissionLoiterRingLinesGeoJson(twoLegs(), 3).features).toEqual([])
+  })
+})
+
+describe('zoomToShowMission', () => {
+  const drone = { lat: -37.861, lon: 145.062 }
+  const viewportPx = { width: 1200, height: 800 }
+  const at = (eastM: number, northM: number) => fromLocalEastNorthM(drone, eastM, northM)
+  const missionWith = (items: Mission['items']): Mission => ({ id: 'm', name: 'm', items, createdAt: 0, updatedAt: 0 })
+  /** Ground metres from the centre to the edge of the shorter side, minus padding. */
+  const halfViewM = (zoom: number) => metersPerPixel(zoom, drone.lat) * (800 / 2 - 60)
+
+  it('zooms so a drone-centred view just reaches the furthest waypoint', () => {
+    const mission = missionWith([{ type: 'vtolTakeoff', altM: 40 }, { type: 'waypoint', ...at(0, 1500), altM: 60 }, { type: 'returnToLaunch' }])
+    const zoom = zoomToShowMission(drone, mission, drone, { viewportPx })
+    expect(halfViewM(zoom)).toBeCloseTo(1500, -1)
+  })
+
+  it('counts the outer edge of a loiter circle, and home', () => {
+    const loiter = missionWith([{ type: 'loiter', ...at(1000, 0), altM: 60, radiusM: 500, turns: 1 }])
+    expect(halfViewM(zoomToShowMission(drone, loiter, null, { viewportPx }))).toBeCloseTo(1500, -1)
+
+    const farHome = at(-2000, 0)
+    expect(halfViewM(zoomToShowMission(drone, loiter, farHome, { viewportPx }))).toBeCloseTo(2000, -1)
+  })
+
+  it('falls back to zoom 15 on the drone when the mission is too big to show usefully', () => {
+    const big = missionWith([{ type: 'waypoint', ...at(0, 30_000), altM: 60 }])
+    expect(zoomToShowMission(drone, big, null, { viewportPx })).toBe(15)
+  })
+
+  it('caps the zoom for a tiny mission, and falls back with no mission', () => {
+    const tiny = missionWith([{ type: 'waypoint', ...at(0, 20), altM: 60 }])
+    expect(zoomToShowMission(drone, tiny, null, { viewportPx })).toBe(17)
+    expect(zoomToShowMission(drone, null, null, { viewportPx })).toBe(15)
   })
 })

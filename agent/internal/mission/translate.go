@@ -18,13 +18,21 @@ const (
 	CmdNavReturnToLaunch              = 20
 	CmdNavVtolTakeoff                 = 84
 	CmdNavVtolLand                    = 85
+	CmdDoSendScriptMessage            = 217
 	CmdNavFencePolygonVertexInclusion = 5001
 )
+
+// LoiterUntilScriptMsgID is the DO_SEND_SCRIPT_MESSAGE id the FC's
+// loiter_until.lua script looks for (sim/scripts/loiter_until.lua); param2
+// carries the end time.
+const LoiterUntilScriptMsgID = 7301
 
 // MAV_FRAME values used here.
 const (
 	// FrameGlobal is altitude above mean sea level; ArduPilot's home row uses it.
 	FrameGlobal = 0
+	// FrameMission is for non-positional (DO) commands.
+	FrameMission = 2
 	// FrameGlobalRelativeAlt is altitude above home, for every mission item.
 	FrameGlobalRelativeAlt = 3
 )
@@ -121,11 +129,11 @@ func Translate(m Mission, home *Home) (Result, error) {
 	res.Items = append(res.Items, homeRow)
 
 	for i, item := range m.Items {
-		row, err := translateItem(item, i, &res.Issues)
+		rows, err := translateItem(item, i, len(res.Items), &res.Issues)
 		if err != nil {
 			return Result{}, err
 		}
-		res.Items = append(res.Items, row)
+		res.Items = append(res.Items, rows...)
 	}
 
 	if m.Fence != nil {
@@ -144,8 +152,10 @@ func Translate(m Mission, home *Home) (Result, error) {
 	return res, nil
 }
 
-func translateItem(item Item, index int, issues *[]Issue) (Row, error) {
-	row := Row{Seq: index + 1, Frame: FrameGlobalRelativeAlt, AppIndex: intPtr(index)}
+// translateItem returns an app item's rows, starting at seq. Usually one row;
+// a clock-mode loiter is two.
+func translateItem(item Item, index, seq int, issues *[]Issue) ([]Row, error) {
+	row := Row{Seq: seq, Frame: FrameGlobalRelativeAlt, AppIndex: intPtr(index)}
 	issue := func(code, severity, message string) {
 		*issues = append(*issues, Issue{ItemIndex: intPtr(index), Code: code, Severity: severity, Message: message})
 	}
@@ -172,10 +182,13 @@ func translateItem(item Item, index int, issues *[]Issue) (Row, error) {
 		row.Lat, row.Lon, row.AltM = item.Lat, item.Lon, item.AltM
 		if item.UntilUTCMinuteOfDay != nil {
 			issue("loiter_until_not_native", "warning",
-				"ArduPilot has no loiter-until-time-of-day; sent as an unlimited loiter that the agent or an FC script must end (ADR-0017)")
+				"ArduPilot has no loiter-until-time-of-day; sent as an unlimited loiter that the FC's loiter_until.lua script ends (ADR-0017)")
 			row.Command = CmdNavLoiterUnlim
 			row.Params = [4]float64{0, 0, item.RadiusM, 0}
-			break
+			// The marker row the script reads; it has no app item.
+			marker := Row{Seq: seq + 1, Command: CmdDoSendScriptMessage, Frame: FrameMission,
+				Params: [4]float64{LoiterUntilScriptMsgID, *item.UntilUTCMinuteOfDay, 0, 0}}
+			return []Row{row, marker}, nil
 		}
 		turns := 1.0
 		if item.Turns != nil {
@@ -199,9 +212,9 @@ func translateItem(item Item, index int, issues *[]Issue) (Row, error) {
 
 	default:
 		// Never guess at an unknown item: refusing is the safe answer.
-		return Row{}, fmt.Errorf("mission item %d: unknown type %q", index, item.Type)
+		return nil, fmt.Errorf("mission item %d: unknown type %q", index, item.Type)
 	}
-	return row, nil
+	return []Row{row}, nil
 }
 
 // loiterTurnsRadius is the radius ArduPilot will actually hold: whole metres

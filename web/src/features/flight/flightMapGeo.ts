@@ -532,3 +532,50 @@ export function buildFenceGeoJson(mission: Mission | null): Feature<Polygon> | n
     geometry: { type: 'Polygon', coordinates: [ring] },
   }
 }
+
+export interface MissionZoomOptions {
+  /** Map viewport size in CSS pixels. */
+  viewportPx: { width: number; height: number }
+  /** Space kept clear around the mission, in pixels. */
+  paddingPx?: number
+  /** Zooming out further than this to fit the mission isn't useful (the
+   * drone becomes a dot); fall back to `fallbackZoom` instead. */
+  minZoom?: number
+  fallbackZoom?: number
+  /** Never zoom in closer than this, for a tiny mission. */
+  maxZoom?: number
+}
+
+export const MISSION_FIT_MIN_ZOOM = 13
+export const MISSION_FIT_FALLBACK_ZOOM = 15
+export const MISSION_FIT_MAX_ZOOM = 17
+
+/**
+ * The zoom for a view *centred on the drone* that still shows the whole
+ * mission: every item, the outer edge of each loiter circle, and home. If
+ * that needs zooming out past `minZoom` (a large mission), returns
+ * `fallbackZoom` instead, so the drone stays readable.
+ */
+export function zoomToShowMission(
+  drone: GeoPoint,
+  mission: Mission | null,
+  home: GeoPoint | null,
+  { viewportPx, paddingPx = 60, minZoom = MISSION_FIT_MIN_ZOOM, fallbackZoom = MISSION_FIT_FALLBACK_ZOOM, maxZoom = MISSION_FIT_MAX_ZOOM }: MissionZoomOptions,
+): number {
+  // Furthest any part of the mission reaches from the drone.
+  let reachM = 0
+  for (const item of mission?.items ?? []) {
+    if (!('lat' in item)) continue
+    const radiusM = item.type === 'loiter' ? item.radiusM : 0
+    reachM = Math.max(reachM, haversineDistanceM(drone, item) + radiusM)
+  }
+  if (home) reachM = Math.max(reachM, haversineDistanceM(drone, home))
+  if (reachM === 0) return fallbackZoom
+
+  // Centred on the drone, the mission has to fit in half the shorter side.
+  const halfPx = Math.min(viewportPx.width, viewportPx.height) / 2 - paddingPx
+  if (halfPx <= 0) return fallbackZoom
+  const zoom = Math.log2(metersPerPixel(0, drone.lat) / (reachM / halfPx))
+  if (zoom < minZoom) return fallbackZoom
+  return Math.min(zoom, maxZoom)
+}

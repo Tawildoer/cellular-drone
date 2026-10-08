@@ -1,4 +1,4 @@
-import { isPointInPolygon, pathLengthM } from './geo'
+import { distanceToPolygonEdgeM, isPointInPolygon, pathLengthM, segmentsIntersect } from './geo'
 import { itemPosition, MINUTES_PER_DAY, type GeoPoint, type Mission } from './mission'
 
 export const DEFAULT_MAX_ALT_M = 120
@@ -22,7 +22,9 @@ export interface ValidateMissionOptions {
 
 /** Mission validation rules from docs/FRONTEND.md: must start with a VTOL
  * takeoff and end with a land or RTL, respect altitude limits, and stay
- * inside the fence (when one is set). */
+ * inside the fence (when one is set) — every item, every leg between items
+ * and every loiter circle, since the flight controller enforces the fence
+ * along the whole path, not just at the points (ADR-0017). */
 export function validateMission(mission: Mission, opts: ValidateMissionOptions = {}): MissionValidationResult {
   const maxAltM = opts.maxAltM ?? DEFAULT_MAX_ALT_M
   const issues: MissionValidationIssue[] = []
@@ -43,6 +45,7 @@ export function validateMission(mission: Mission, opts: ValidateMissionOptions =
     issues.push({ itemIndex: items.length - 1, message: 'Mission must end with a VTOL land or return-to-launch' })
   }
 
+  let previous: { index: number; point: GeoPoint } | null = null
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
     if (!item) continue
@@ -67,16 +70,38 @@ export function validateMission(mission: Mission, opts: ValidateMissionOptions =
 
     if (mission.fence) {
       const point = itemPosition(item)
-      if (point && !isPointInPolygon(point, mission.fence.polygon)) {
+      const polygon = mission.fence.polygon
+      const inside = point !== null && isPointInPolygon(point, polygon)
+      if (point && !inside) {
         issues.push({ itemIndex: i, message: 'Item falls outside the geofence' })
+      }
+      // A leg between two inside points can still cut across a concave fence.
+      // Legs to or from an outside point are already flagged above.
+      if (point && inside && previous && isPointInPolygon(previous.point, polygon) && legCrossesFence(previous.point, point, polygon)) {
+        issues.push({ itemIndex: i, message: `The leg from item ${previous.index + 1} crosses the geofence` })
+      }
+      if (item.type === 'loiter' && inside && distanceToPolygonEdgeM(item, polygon) < item.radiusM) {
+        issues.push({ itemIndex: i, message: `The ${item.radiusM}m loiter circle reaches outside the geofence` })
       }
       if (mission.fence.maxAltM !== undefined && altM !== null && altM > mission.fence.maxAltM) {
         issues.push({ itemIndex: i, message: `Altitude ${altM}m exceeds the fence limit of ${mission.fence.maxAltM}m` })
       }
     }
+
+    const position = itemPosition(item)
+    if (position) previous = { index: i, point: position }
   }
 
   return { valid: issues.length === 0, issues }
+}
+
+function legCrossesFence(from: GeoPoint, to: GeoPoint, polygon: GeoPoint[]): boolean {
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[j]
+    const b = polygon[i]
+    if (a && b && segmentsIntersect(from, to, a, b)) return true
+  }
+  return false
 }
 
 /** Estimated time to complete the mission from a starting point, in seconds. */

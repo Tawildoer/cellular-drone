@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy",
+    "e2e:sitl": "playwright test --config playwright.sitl.config.ts"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

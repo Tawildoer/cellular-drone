@@ -1,5 +1,5 @@
 import type { VehicleMissionItem } from '../domain'
-import { MavCmd } from './translate'
+import { LOITER_UNTIL_SCRIPT_MSG_ID, MavCmd } from './translate'
 
 const COMMAND_NAMES: Record<number, string> = {
   [MavCmd.NAV_WAYPOINT]: 'NAV_WAYPOINT',
@@ -8,6 +8,7 @@ const COMMAND_NAMES: Record<number, string> = {
   [MavCmd.NAV_RETURN_TO_LAUNCH]: 'NAV_RETURN_TO_LAUNCH',
   [MavCmd.NAV_VTOL_TAKEOFF]: 'NAV_VTOL_TAKEOFF',
   [MavCmd.NAV_VTOL_LAND]: 'NAV_VTOL_LAND',
+  [MavCmd.DO_SEND_SCRIPT_MESSAGE]: 'DO_SEND_SCRIPT_MESSAGE',
   [MavCmd.NAV_FENCE_POLYGON_VERTEX_INCLUSION]: 'FENCE_POLYGON_VERTEX_INCLUSION',
 }
 
@@ -35,6 +36,13 @@ export function describeItem(item: VehicleMissionItem): string {
       return `land at ${pos}`
     case MavCmd.NAV_RETURN_TO_LAUNCH:
       return 'return home, VTOL land (Q_RTL_MODE)'
+    case MavCmd.DO_SEND_SCRIPT_MESSAGE:
+      if (p1 === LOITER_UNTIL_SCRIPT_MSG_ID) {
+        const minute = Math.round(p2)
+        const hhmm = `${String(Math.floor(minute / 60)).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`
+        return `loiter_until.lua: end the loiter at ${hhmm} UTC`
+      }
+      return `script message ${p1}`
     default:
       return `${pos} @ ${item.altM} m, p ${item.params.join('/')}`
   }

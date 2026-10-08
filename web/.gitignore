@@ -29,3 +29,7 @@ dist-ssr
 !.dev.vars.example
 .env*
 !.env.example
+
+# SITL end-to-end runs
+test-results-sitl
+playwright-report-sitl

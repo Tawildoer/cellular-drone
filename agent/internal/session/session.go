@@ -5,6 +5,7 @@
 package session
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,11 +18,27 @@ import (
 	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v4"
 
+	"github.com/tomwildoer/cellular-drone/agent/internal/mission"
 	"github.com/tomwildoer/cellular-drone/agent/internal/protocol"
 	"github.com/tomwildoer/cellular-drone/agent/internal/video"
 )
 
 const noFlightControllerDetail = "agent link test: no flight controller attached"
+
+// Vehicle is the flight controller behind the agent (internal/fc). Nil in
+// link-test mode, when the agent reports a stub state and refuses commands.
+type Vehicle interface {
+	State() protocol.VehicleState
+	Command(ctx context.Context, cmd protocol.Command) protocol.CommandResult
+	UploadMission(ctx context.Context, m mission.Mission) (protocol.CommandResult, []mission.Row)
+	CurrentMission(ctx context.Context) (*mission.Mission, error)
+	// SetCommanderActive starts or stops the GCS heartbeat that keeps the
+	// FC's GCS failsafe from firing.
+	SetCommanderActive(active bool)
+}
+
+// How long a browser request may take: mission transfers retry over MAVLink.
+const requestTimeout = 30 * time.Second
 
 type Config struct {
 	VehicleID  string
@@ -49,17 +66,18 @@ type Config struct {
 type SendFunc func(protocol.Signalling)
 
 type Manager struct {
-	cfg   Config
-	api   *webrtc.API
-	video *video.Source
-	send  SendFunc
-	log   *slog.Logger
+	cfg     Config
+	api     *webrtc.API
+	video   *video.Source
+	vehicle Vehicle
+	send    SendFunc
+	log     *slog.Logger
 
 	mu       sync.Mutex
 	sessions map[string]*Session
 }
 
-func NewManager(cfg Config, videoSource *video.Source, send SendFunc, log *slog.Logger) (*Manager, error) {
+func NewManager(cfg Config, videoSource *video.Source, vehicle Vehicle, send SendFunc, log *slog.Logger) (*Manager, error) {
 	settings := webrtc.SettingEngine{}
 	settings.SetICETimeouts(cfg.ICEDisconnectedTimeout, cfg.ICEFailedTimeout, cfg.ICEKeepalive)
 	settings.SetInterfaceFilter(func(name string) bool {
@@ -92,6 +110,7 @@ func NewManager(cfg Config, videoSource *video.Source, send SendFunc, log *slog.
 		cfg:      cfg,
 		api:      webrtc.NewAPI(webrtc.WithSettingEngine(settings), webrtc.WithMediaEngine(media), webrtc.WithInterceptorRegistry(interceptors)),
 		video:    videoSource,
+		vehicle:  vehicle,
 		send:     send,
 		log:      log,
 		sessions: map[string]*Session{},
@@ -162,6 +181,45 @@ func (m *Manager) AddCandidate(msg protocol.Signalling) {
 	}
 }
 
+// BroadcastEvent sends a vehicle event (protocol event struct) to every
+// session's control channel.
+func (m *Manager) BroadcastEvent(ev any) {
+	raw, err := protocol.Encode("telemetry.event", "", ev)
+	if err != nil {
+		return
+	}
+	for _, s := range m.snapshot() {
+		s.sendControl(raw)
+	}
+}
+
+func (m *Manager) snapshot() []*Session {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	all := make([]*Session, 0, len(m.sessions))
+	for _, s := range m.sessions {
+		all = append(all, s)
+	}
+	return all
+}
+
+// updateCommander keeps the GCS heartbeat running while any session has an
+// open control channel. One commander at a time is a later refinement
+// (ARCHITECTURE.md, Session flow step 6).
+func (m *Manager) updateCommander() {
+	if m.vehicle == nil {
+		return
+	}
+	active := false
+	for _, s := range m.snapshot() {
+		s.mu.Lock()
+		open := s.control != nil
+		s.mu.Unlock()
+		active = active || open
+	}
+	m.vehicle.SetCommanderActive(active)
+}
+
 func (m *Manager) CloseAll(reason string) {
 	m.mu.Lock()
 	all := make([]*Session, 0, len(m.sessions))
@@ -187,6 +245,16 @@ type Session struct {
 	answered    bool
 	failedTimer *time.Timer
 	holdsVideo  bool
+	control     *webrtc.DataChannel // set while the control channel is open
+}
+
+func (s *Session) sendControl(raw []byte) {
+	s.mu.Lock()
+	dc := s.control
+	s.mu.Unlock()
+	if dc != nil {
+		_ = dc.SendText(string(raw))
+	}
 }
 
 func (m *Manager) newSession(id string) (*Session, error) {
@@ -231,8 +299,24 @@ func (m *Manager) newSession(id string) (*Session, error) {
 		case "telemetry":
 			dc.OnOpen(func() { go s.streamTelemetry(dc) })
 		case "control":
-			dc.OnOpen(func() { s.sendStatus(dc, "Agent link test: no flight controller attached, telemetry is a placeholder") })
-			dc.OnMessage(func(msg webrtc.DataChannelMessage) { s.handleControl(dc, msg.Data) })
+			dc.OnOpen(func() {
+				s.mu.Lock()
+				s.control = dc
+				s.mu.Unlock()
+				m.updateCommander()
+				if m.vehicle == nil {
+					s.sendStatus(dc, "Agent link test: no flight controller attached, telemetry is a placeholder")
+				}
+			})
+			dc.OnClose(func() {
+				s.mu.Lock()
+				s.control = nil
+				s.mu.Unlock()
+				m.updateCommander()
+			})
+			// Requests can take seconds (mission transfers), so each runs on
+			// its own goroutine rather than holding up the channel.
+			dc.OnMessage(func(msg webrtc.DataChannelMessage) { go s.handleControl(dc, msg.Data) })
 		default:
 			s.log.Warn("unknown_data_channel", "label", dc.Label())
 		}
@@ -304,6 +388,7 @@ func (s *Session) close(reason string) {
 		s.m.mu.Lock()
 		delete(s.m.sessions, s.id)
 		s.m.mu.Unlock()
+		s.m.updateCommander()
 		s.log.Info("session_closed", "reason", reason)
 	})
 }
@@ -321,7 +406,11 @@ func (s *Session) streamTelemetry(dc *webrtc.DataChannel) {
 				s.log.Info("telemetry_stopped", "channel_state", dc.ReadyState().String())
 				return
 			}
-			raw, err := protocol.Encode("telemetry.state", "", protocol.StubVehicleState(s.m.cfg.VehicleID, s.m.cfg.Home))
+			state := protocol.StubVehicleState(s.m.cfg.VehicleID, s.m.cfg.Home)
+			if s.m.vehicle != nil {
+				state = s.m.vehicle.State()
+			}
+			raw, err := protocol.Encode("telemetry.state", "", state)
 			// Text frames, not Send's binary: the protocol is JSON text, and a
 			// browser hands binary frames over as ArrayBuffers.
 			if err == nil {
@@ -341,13 +430,17 @@ func (s *Session) sendStatus(dc *webrtc.DataChannel, text string) {
 	}
 }
 
-// handleControl answers requests on the reliable channel. Every command is
-// logged (the audit trail ARCHITECTURE.md asks for) and, with no flight
-// controller behind the agent yet, refused rather than faked.
+// handleControl answers requests on the reliable channel. Every command and
+// upload is logged with its result (the audit trail ARCHITECTURE.md asks
+// for). With no flight controller (link-test mode) they're refused, not faked.
 func (s *Session) handleControl(dc *webrtc.DataChannel, data []byte) {
 	var env protocol.Envelope
 	if err := json.Unmarshal(data, &env); err != nil || env.V != protocol.Version {
 		s.log.Warn("control_message_invalid")
+		return
+	}
+	if v := s.m.vehicle; v != nil && env.Type != "ping" {
+		s.handleVehicleRequest(dc, v, env)
 		return
 	}
 
@@ -368,6 +461,44 @@ func (s *Session) handleControl(dc *webrtc.DataChannel, data []byte) {
 		reply, err = protocol.Encode("mission.uploaded", env.ID, protocol.MissionUploaded{MissionID: mission.ID, Result: protocol.Rejected(noFlightControllerDetail)})
 	case "mission.download":
 		reply, err = protocol.Encode("mission.current", env.ID, nil)
+	default:
+		s.log.Info("control_message_ignored", "type", env.Type)
+		return
+	}
+	if err == nil {
+		_ = dc.SendText(string(reply))
+	}
+}
+
+func (s *Session) handleVehicleRequest(dc *webrtc.DataChannel, v Vehicle, env protocol.Envelope) {
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	defer cancel()
+
+	var reply []byte
+	var err error
+	switch env.Type {
+	case "cmd.request":
+		var cmd protocol.Command
+		result := protocol.Rejected("malformed command")
+		if json.Unmarshal(env.Payload, &cmd) == nil {
+			result = v.Command(ctx, cmd)
+		}
+		s.log.Info("command", "request_id", env.ID, "type", cmd.Type, "ok", result.OK, "reason", result.Reason, "detail", result.Detail)
+		reply, err = protocol.Encode("cmd.result", env.ID, result)
+	case "mission.upload":
+		var m mission.Mission
+		result, rows := protocol.Rejected("malformed mission"), []mission.Row(nil)
+		if json.Unmarshal(env.Payload, &m) == nil {
+			result, rows = v.UploadMission(ctx, m)
+		}
+		s.log.Info("mission_upload", "request_id", env.ID, "mission_id", m.ID, "ok", result.OK, "detail", result.Detail, "rows", len(rows))
+		reply, err = protocol.Encode("mission.uploaded", env.ID, protocol.MissionUploaded{MissionID: m.ID, Result: result, OnVehicle: rows})
+	case "mission.download":
+		current, derr := v.CurrentMission(ctx)
+		if derr != nil {
+			s.log.Warn("mission_download_failed", "error", derr.Error())
+		}
+		reply, err = protocol.Encode("mission.current", env.ID, current)
 	default:
 		s.log.Info("control_message_ignored", "type", env.Type)
 		return

@@ -17,13 +17,20 @@ export const MavCmd = {
   NAV_RETURN_TO_LAUNCH: 20,
   NAV_VTOL_TAKEOFF: 84,
   NAV_VTOL_LAND: 85,
+  DO_SEND_SCRIPT_MESSAGE: 217,
   NAV_FENCE_POLYGON_VERTEX_INCLUSION: 5001,
 } as const
+
+/** `DO_SEND_SCRIPT_MESSAGE` id the FC's loiter_until.lua script looks for
+ * (sim/scripts/loiter_until.lua): param2 carries the end time. */
+export const LOITER_UNTIL_SCRIPT_MSG_ID = 7301
 
 /** MAV_FRAME values used here. */
 export const MavFrame = {
   /** Altitude above mean sea level. ArduPilot's home row uses it. */
   GLOBAL: 0,
+  /** Non-positional (DO) commands. */
+  MISSION: 2,
   /** Altitude above home: every mission item (`altM` is relative to home). */
   GLOBAL_RELATIVE_ALT: 3,
 } as const
@@ -81,15 +88,15 @@ function at(point: GeoPoint, altM: number) {
   return { lat: point.lat, lon: point.lon, altM }
 }
 
-/** One app item → one ArduPlane row (no item expands into several yet). */
-function translateItem(item: MissionItem, index: number, issues: TranslationIssue[]): VehicleMissionItem {
-  const seq = index + 1
+/** One app item → its ArduPlane rows, starting at `seq`. Usually one row; a
+ * clock-mode loiter is two. */
+function translateItem(item: MissionItem, index: number, seq: number, issues: TranslationIssue[]): VehicleMissionItem[] {
   const frame = MavFrame.GLOBAL_RELATIVE_ALT
 
   switch (item.type) {
     case 'vtolTakeoff':
       // Climbs over wherever it is; ArduPlane ignores lat/lon.
-      return row(seq, MavCmd.NAV_VTOL_TAKEOFF, frame, NO_PARAMS, { ...NO_POSITION, altM: item.altM }, index)
+      return [row(seq, MavCmd.NAV_VTOL_TAKEOFF, frame, NO_PARAMS, { ...NO_POSITION, altM: item.altM }, index)]
 
     case 'waypoint': {
       let acceptRadiusM = Math.trunc(item.acceptRadiusM ?? 0)
@@ -103,7 +110,7 @@ function translateItem(item: MissionItem, index: number, issues: TranslationIssu
         acceptRadiusM = MAX_BYTE
       }
       // param2 = accept radius; 0 means "use WP_RADIUS".
-      return row(seq, MavCmd.NAV_WAYPOINT, frame, [0, acceptRadiusM, 0, 0], at(item, item.altM), index)
+      return [row(seq, MavCmd.NAV_WAYPOINT, frame, [0, acceptRadiusM, 0, 0], at(item, item.altM), index)]
     }
 
     case 'loiter': {
@@ -113,10 +120,21 @@ function translateItem(item: MissionItem, index: number, issues: TranslationIssu
           code: 'loiter_until_not_native',
           severity: 'warning',
           message:
-            'ArduPilot has no "loiter until a time of day". This becomes an unlimited loiter that something else must end (agent or FC script, ADR-0017); otherwise it circles until the battery failsafe',
+            'ArduPilot has no "loiter until a time of day". It becomes an unlimited loiter that the loiter_until.lua script on the flight controller ends (ADR-0017). Without that script it circles until the battery failsafe',
         })
-        // Unlimited loiter keeps the radius as given (no byte packing).
-        return row(seq, MavCmd.NAV_LOITER_UNLIM, frame, [0, 0, item.radiusM, 0], at(item, item.altM), index)
+        // Unlimited loiter keeps the radius as given (no byte packing). The
+        // marker row after it is what the script reads; it has no app item.
+        return [
+          row(seq, MavCmd.NAV_LOITER_UNLIM, frame, [0, 0, item.radiusM, 0], at(item, item.altM), index),
+          row(
+            seq + 1,
+            MavCmd.DO_SEND_SCRIPT_MESSAGE,
+            MavFrame.MISSION,
+            [LOITER_UNTIL_SCRIPT_MSG_ID, item.untilUtcMinuteOfDay, 0, 0],
+            NO_POSITION,
+            null,
+          ),
+        ]
       }
 
       let turns = item.turns ?? 1
@@ -132,15 +150,15 @@ function translateItem(item: MissionItem, index: number, issues: TranslationIssu
       const radiusM = loiterTurnsRadiusOnVehicle(item.radiusM, index, issues)
       // param3 = radius (positive = clockwise), param4 = 1: leave along the
       // next leg rather than from wherever the last lap ends (ADR-0013).
-      return row(seq, MavCmd.NAV_LOITER_TURNS, frame, [turns, 0, radiusM, 1], at(item, item.altM), index)
+      return [row(seq, MavCmd.NAV_LOITER_TURNS, frame, [turns, 0, radiusM, 1], at(item, item.altM), index)]
     }
 
     case 'vtolLand':
-      return row(seq, MavCmd.NAV_VTOL_LAND, frame, NO_PARAMS, at(item, 0), index)
+      return [row(seq, MavCmd.NAV_VTOL_LAND, frame, NO_PARAMS, at(item, 0), index)]
 
     case 'returnToLaunch':
       // VTOL landing at home comes from Q_RTL_MODE, a vehicle parameter.
-      return row(seq, MavCmd.NAV_RETURN_TO_LAUNCH, frame, NO_PARAMS, NO_POSITION, index)
+      return [row(seq, MavCmd.NAV_RETURN_TO_LAUNCH, frame, NO_PARAMS, NO_POSITION, index)]
   }
 }
 
@@ -198,7 +216,8 @@ export function translateMission(mission: Mission, home: HomePosition | null): A
     null,
   )
 
-  const items = [homeRow, ...mission.items.map((item, index) => translateItem(item, index, issues))]
+  const items = [homeRow]
+  mission.items.forEach((item, index) => items.push(...translateItem(item, index, items.length, issues)))
 
   const fence: VehicleMissionItem[] = []
   const params: Record<string, number> = {}

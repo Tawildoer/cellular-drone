@@ -7,16 +7,20 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/bluenviron/gomavlib/v3"
 	"github.com/pion/webrtc/v4"
 
+	"github.com/tomwildoer/cellular-drone/agent/internal/fc"
 	"github.com/tomwildoer/cellular-drone/agent/internal/protocol"
 	"github.com/tomwildoer/cellular-drone/agent/internal/session"
 	"github.com/tomwildoer/cellular-drone/agent/internal/signalling"
@@ -45,6 +49,7 @@ func main() {
 	advertiseIP := flag.String("advertise-ip", "", "comma-separated public IPs to offer on -udp-port (the router's public address when forwarding)")
 	videoCmd := flag.String("video-cmd", defaultVideoCmd, "encoder command sending H.264 RTP to 127.0.0.1:{port} (empty = no video)")
 	videoPort := flag.Int("video-port", 5004, "local UDP port the encoder sends RTP to")
+	fcAddr := flag.String("fc", "", "flight controller MAVLink: tcp:HOST:PORT (SITL, e.g. tcp:127.0.0.1:5760) or serial:DEVICE:BAUD (e.g. serial:/dev/ttyS2:921600); empty = link-test mode with no FC")
 	logPath := flag.String("log", "-", "JSONL log file (- = stdout)")
 	homeLat := flag.Float64("home-lat", -37.861, "reported home latitude")
 	homeLon := flag.Float64("home-lon", 145.062, "reported home longitude")
@@ -78,6 +83,32 @@ func main() {
 	}
 
 	var client *signalling.Client
+	var manager *session.Manager
+	var vehicle session.Vehicle
+	if *fcAddr != "" {
+		endpoint, err := fcEndpoint(*fcAddr)
+		if err != nil {
+			log.Error("fc_config_invalid", "error", err.Error())
+			os.Exit(1)
+		}
+		link, err := fc.New(fc.Config{
+			Endpoint:  endpoint,
+			VehicleID: *vehicleID,
+			Log:       log,
+			OnEvent: func(ev fc.Event) {
+				if manager != nil {
+					manager.BroadcastEvent(ev)
+				}
+			},
+		})
+		if err != nil {
+			log.Error("fc_init_failed", "error", err.Error())
+			os.Exit(1)
+		}
+		go link.Run(ctx)
+		vehicle = link
+	}
+
 	manager, err := session.NewManager(session.Config{
 		VehicleID:              *vehicleID,
 		Home:                   protocol.HomePosition{Lat: *homeLat, Lon: *homeLon},
@@ -90,7 +121,7 @@ func main() {
 		ICEKeepalive:           *iceKeepalive,
 		TelemetryInterval:      100 * time.Millisecond,
 		FailedGrace:            2 * time.Minute,
-	}, videoSource, func(msg protocol.Signalling) { client.Send(msg) }, log)
+	}, videoSource, vehicle, func(msg protocol.Signalling) { client.Send(msg) }, log)
 	if err != nil {
 		log.Error("webrtc_init_failed", "error", err.Error())
 		os.Exit(1)
@@ -107,7 +138,7 @@ func main() {
 		}
 	}, log)
 
-	log.Info("agent_started", "signal", *signalURL, "video", *videoCmd != "", "iface", *iface)
+	log.Info("agent_started", "signal", *signalURL, "video", *videoCmd != "", "iface", *iface, "fc", *fcAddr)
 	client.Run(ctx)
 	manager.CloseAll("agent shutting down")
 }
@@ -128,4 +159,24 @@ func splitList(csv string) []string {
 		}
 	}
 	return out
+}
+
+// fcEndpoint parses -fc: tcp:HOST:PORT or serial:DEVICE:BAUD.
+func fcEndpoint(spec string) (gomavlib.EndpointConf, error) {
+	kind, rest, _ := strings.Cut(spec, ":")
+	switch kind {
+	case "tcp":
+		return gomavlib.EndpointTCPClient{Address: rest}, nil
+	case "serial":
+		i := strings.LastIndex(rest, ":")
+		if i < 0 {
+			return nil, fmt.Errorf("serial needs DEVICE:BAUD, got %q", rest)
+		}
+		baud, err := strconv.Atoi(rest[i+1:])
+		if err != nil {
+			return nil, fmt.Errorf("bad baud rate %q", rest[i+1:])
+		}
+		return gomavlib.EndpointSerial{Device: rest[:i], Baud: baud}, nil
+	}
+	return nil, fmt.Errorf("unknown -fc kind %q (want tcp: or serial:)", kind)
 }

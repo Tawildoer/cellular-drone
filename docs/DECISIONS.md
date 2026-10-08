@@ -25,7 +25,7 @@ SpeedyBee F405 WING is cheap, and you already have bootloader files for it. Howe
 **Decision:** The drone runs a WebRTC peer. Video is a media track (H.264). Telemetry uses an unreliable data channel; commands use a reliable one. The VPS does auth, signalling and STUN/TURN only. The drone checks a server-signed session token before accepting a peer. The command whitelist is enforced **on the drone**.
 **Consequences:** Cellular CGNAT will often force TURN, which costs a small latency hit from a nearby VPS. Each viewer uses drone uplink, so cap viewers (SFU later if needed). QuadroFleet is no longer a dependency; we keep only its hardware references.
 
-## ADR-0006: Air unit = Radxa Zero 3W companion (2026-10-02, accepted)
+## ADR-0006: Air unit = Radxa Zero 3W companion (2026-10-02, SUPERSEDED by ADR-0018)
 **Context:** WebRTC on an OpenIPC SigmaStar SoC would mean porting a WebRTC stack into buildroot, and Majestic's WebRTC support on SigmaStar is unclear. A Linux SBC runs Pion and GStreamer as-is.
 **Decision:** Prototype on a **Radxa Zero 3W** (RK3566, hardware H.264/H.265 encode, ~10 g) with a USB LTE modem and a MIPI or USB camera. Keep the agent portable Go so an OpenIPC port stays possible.
 **Alternatives:** Pi Zero 2W (weaker CPU, H.264 only). Pi 4/CM4 (heavier). OpenIPC SSC338Q (lightest, but more embedded work). Revisit in Phase 5.
@@ -106,7 +106,7 @@ TURN is deferred, not dropped: coturn is not built now (Phase 1c step 3 is on ho
 - Path planning stays in the browser as pure `domain/` functions that produce plain mission items. Anything richer (survey grids, corridors, fence-aware routing) expands into native items before upload, so the FC can fly the whole mission with the agent, modem or browser gone.
 - ArduPlane SITL is the behavioural reference. Where the mock differs, tune the mock to match SITL.
 - `altM` is metres above home (`MAV_FRAME_GLOBAL_RELATIVE_ALT_INT`). The agent maps MAVLink seq to app item index (seq 0 = home) and keeps the uploaded `Mission` JSON for identity.
-**Open:** clock-mode loiter (ADR-0013). Options: the agent advances a `LOITER_UNLIM` at the time (simple, but the aircraft circles until battery failsafe if the companion dies), a Lua script on the FC (robust, needs an H743, not the F405, see ADR-0002), or rewriting the item to `LOITER_TIME` on arrival. Leaning Lua for the real aircraft, agent-driven in SITL until then.
+**Clock-mode loiter (ADR-0013), decided 2026-10-07: a Lua script on the FC.** The translator writes it as `NAV_LOITER_UNLIM` plus a `DO_SEND_SCRIPT_MESSAGE` marker row (id 7301, end time in param2), and `sim/scripts/loiter_until.lua` ends it from GPS time, so it works with the companion computer gone. Proven in SITL. It needs an FC with Lua scripting, so an H7 class board, not the F405 (ADR-0002). Without the script, the loiter never ends and the battery failsafe brings the aircraft home.
 **Consequences:** Phase 1b (SITL + MAVLink in the agent) moves ahead of new planner features. Fence validation must check legs and loiter circles, not just points.
 
 **Addendum (2026-10-07): where the translation runs — hybrid.** Weighed translating on the drone against translating in the browser. On the drone keeps the agent's safety gate narrow (it accepts five app item types, never arbitrary MAVLink), lets it adapt to the FC's real params and firmware, and keeps the wire protocol in app vocabulary. In the browser gives instant planning feedback and offline export. So both, with one authority:
@@ -115,6 +115,56 @@ TURN is deferred, not dropped: coturn is not built now (Phase 1c step 3 is on ho
 - **Kept in lockstep** by golden files in `testdata/mission-translation/`, hand-written from ArduPilot's storage rules and run by both test suites.
 - **Readback wins:** `mission.uploaded` carries an optional `onVehicle` list, the FC's mission read back after upload (optional field, so `v` stays 1). The planner shows whether it matches the plan, and can show the vehicle's copy. `MockLink` / `mock-agent` fill it from the preview translator, standing in for an FC.
 - The readback is a raw row type in `domain/` (`VehicleMissionItem`), opaque to the UI: only the `MissionTranslator` interprets its numbers.
+
+## ADR-0018: Air unit = Orange Pi 5 (RK3588S); one streamed gimbal camera plus onboard CV and aux cameras (2026-10-07, accepted)
+**Context:** The aircraft will eventually carry a 2-axis gimbal camera on the underside plus several more cameras, some only for onboard computer vision and some as auxiliary views. That is beyond the Radxa Zero 3W's RK3566 (ADR-0006): it has no NPU worth using for CV and limited camera and encoder capacity. The cellular uplink can only carry about one live video stream anyway.
+**Decision:**
+- **Companion computer: Orange Pi 5 (RK3588S)** for planning, replacing the Radxa Zero 3W. It's the same Rockchip family, so the same arm64 agent binary, GStreamer and MPP (`mpph264enc` / `mpph265enc`) video stack carry over, with an NPU (~6 TOPS, Rockchip's figure, via RKNN) for onboard CV, more CPU and RAM, more encoder capacity and gigabit Ethernet.
+- **One live video stream to the browser at a time.** By default it's the **gimbal camera**. The operator can switch the stream to one of the **aux cameras**, cycling through them; it's always one stream on the WebRTC video track, never several.
+- **CV cameras are onboard only.** They feed the NPU; what reaches the browser is results (detections, alerts, snapshots), not video.
+- **Prefer a gimbal with its own camera and encoder** that outputs H.264/H.265 over Ethernet (SIYI-style units, which ArduPilot supports natively), so the agent forwards it into the WebRTC track without transcoding, and the Orange Pi's encoders are left for the aux cameras.
+**Still to decide (own ADRs when the time comes):** gimbal control from the browser (it isn't flight control, but it adds whitelisted MAVLink gimbal commands to the command model); the protocol for choosing the streamed camera (`video.config` grows a source); and any path from CV results to flight behaviour, which by default stays advisory only: CV never commands the aircraft without its own ADR and the same safety rules as everything else.
+**Consequences:**
+- More weight and power than the Radxa (about 10 g, a few watts) once the board, cooling, gimbal and cameras are counted: budget it in the airframe choice (Phase 0) and the power system (a bigger BEC than 5 V 3 A).
+- Check the Orange Pi 5's camera interfaces against the camera count before buying: the aux and CV cameras may need to be USB (UVC) rather than MIPI CSI.
+- The Pi 5 stand-in (ADR-0014) stays for link work. When the Orange Pi 5 arrives it can take over, and gives real hardware encode numbers, which the Pi 5 can't.
+
+## ADR-0019: Onboard obstacle avoidance acts through the flight controller, in stages (2026-10-07, accepted; mechanism to verify in SITL)
+**Context:** Two of the aux cameras (ADR-0018) are planned for onboard obstacle avoidance, with models on the Orange Pi 5's NPU. That is computer vision affecting flight, which ADR-0018 left advisory-only until it had its own decision. The constraints: the aircraft must stay safe with no link and no companion computer (ARCHITECTURE.md), the browser never sends manual control, and the RC pilot always wins (ADR-0008). As far as we know, ArduPilot's proximity-based avoidance and path planners (`AVOID_*`, `OA_TYPE` BendyRuler/Dijkstra) are Copter/Rover features. ArduPlane in fixed-wing flight doesn't steer around obstacles itself, though QuadPlane may apply some proximity avoidance in its VTOL modes (QLOITER, QLAND, VTOL takeoff and landing). **Verify all of that in SITL before relying on it.**
+**Decision:**
+- **Avoidance acts through the flight controller, never by the agent steering.** The vision pipeline may only:
+  1. feed obstacle data into ArduPilot as sensor input (`OBSTACLE_DISTANCE` / `DISTANCE_SENSOR` over MAVLink, with a MAVLink proximity backend `PRX1_TYPE`), so the FC's own logic acts on it where ArduPilot supports that, and
+  2. trigger a short, fixed list of escape actions that already exist as whitelisted commands (pause into LOITER/QLOITER, RTL, QLAND), for phases where the FC can't avoid by itself.
+  It never sends attitude, velocity or position setpoints, `RC_CHANNELS_OVERRIDE` or `MANUAL_CONTROL`, and never changes the mission.
+- **Additive, never required.** The mission must be safe without avoidance: planned with clearance (altitude above known obstacles, the geofence). If the cameras, models, agent or Orange Pi fail, the aircraft carries on as it does today. ArduPilot drops proximity data that stops arriving.
+- **The RC pilot still wins (ADR-0008).** No escape action fires while the RC pilot holds a manual mode.
+- **Visible and logged.** Detections, every escape action and avoidance health (running, degraded, unavailable) go to the browser as events and into the agent's command log. The operator can turn escape actions off per mission.
+- **In stages, each proven in SITL before the next:**
+  1. **Detect and report only.** Detections and distances shown in the browser; flight unaffected (ADR-0018's default).
+  2. **Sensor input to the FC.** Proximity data into ArduPilot. In SITL the agent injects synthetic `OBSTACLE_DISTANCE`, to see which modes QuadPlane actually avoids in.
+  3. **Escape actions** for the phases stage 2 shows the FC can't cover (expected: fixed-wing cruise). Triggered by the agent at first; a Lua script on the FC can take it over later, so it keeps working if the companion computer fails.
+- **Not a detect-and-avoid system** in the regulatory sense. Don't present it as one for BVLOS (Phase 0 / Phase 5).
+**Still open:** stereo pair vs one camera with a monocular depth model (stereo gives real distances but needs calibration and more RAM); which models; whether to add a cheap rangefinder or lidar for the landing phase (`DISTANCE_SENSOR` downward); the exact escape action per flight phase; the protocol messages for detections and avoidance health.
+**Consequences:**
+- The Orange Pi 5 should be the 8 GB version: avoidance is safety-relevant, and an out-of-memory kill mid-flight could take out the vision pipeline or the agent.
+- The agent gains a second, onboard source of mode changes. The RC-override logic must tell avoidance-triggered changes apart from pilot takeovers, the same way it already tells its own commands apart.
+- At 25 m/s cruise (SITL) a camera detecting at 50–100 m gives only 2–4 s before reaching the obstacle. Fixed-wing escape needs early detection or must stay a coarse "stop and loiter". Hover phases are where avoidance helps most.
+
+## ADR-0020: The link never changes flight behaviour; pauses are limited and resumes rejoin the plan, on the FC (2026-10-07, accepted)
+**Context:** The browser link should be a planning and viewing tool. Two things broke that. (1) The GCS failsafe (`FS_GCS_ENABL 1`, heartbeats only while a browser is connected) changed the flight whenever nobody was connected: at power-up it switched the FC to RTL, which became QRTL on the ground and blocked arming, and a paused aircraft that lost its link would RTL or land where it was. (2) After a pause, ArduPlane resumes by flying straight from wherever it is to the target instead of back onto the planned leg (measured in SITL), so the route flown depended on when someone pressed pause.
+**Decision:**
+- **No GCS failsafe** (`FS_GCS_ENABL 0`). Connecting, disconnecting or losing LTE never changes the flight. The whole mission is uploaded before flight and flown from the FC's memory; only telemetry and video stream down.
+- **`pause_resume.lua` on the FC** handles pauses:
+  - A pause the browser commanded (mode reason `GCS_COMMAND`) that lasts 120 s is resumed by the script, so a pause left by a lost link, or a forgotten one, can't strand the aircraft. A mode the RC pilot chose is never touched (ADR-0008).
+  - Every resume from a pause rejoins the planned leg: the script sets ArduPlane's leg start back to the previous planned waypoint (`vehicle:set_crosstrack_start`), so its line-following steers back onto the plan.
+- **The map's dashed path is always the fixed planned route**, trimmed by progress along it, never redrawn from the aircraft.
+- **The mock rejoins the planned leg on resume** too, matching.
+**Consequences:**
+- Proven in SITL (`agent/cmd/sitlcheck -resume` / `-pause-limit`): back within 2 m of the leg 18 s after a resume (without the script, still 67 m off after 40 s); an unresumed pause resumed itself at 121 s and rejoined.
+- Still protected without the link: battery failsafe, geofence, RC pilot. The cost: an aircraft whose operator vanished mid-pause keeps loitering for up to 120 s before carrying on with the mission.
+- Two scripts are now required on the FC (`loiter_until.lua`, `pause_resume.lua`), which needs an H7 board (ADR-0002).
+- The agent's arm still switches RTL/QRTL/QLAND to QLOITER first: the FC is left in QRTL after any RTL landing.
+- Not yet verified in SITL: that an RC pilot's LOITER isn't time-limited. The test helper (`cmd/sitlpilot`) changes modes over MAVLink, which looks like a ground-station command, so testing this needs real RC input in SITL.
 
 ## Link test results (test matrix from `docs/P2P_TESTING.md`)
 Raw ICE detail lives in the agent's JSONL log and the browser console (`[WebRtcLink]`). NAT mapping measured with `agent/cmd/natcheck`.
