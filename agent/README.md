@@ -63,4 +63,20 @@ reading glass-to-glass latency off the browser.
 | `-stun` | Google STUN | comma-separated STUN/TURN URLs |
 | `-iface` | all but VPN/tunnel | restrict ICE to one interface |
 | `-ice-disconnected` / `-ice-failed` / `-ice-keepalive` | 4s / 15s / 1s | tuned for cellular |
-| `-log` | stdout | JSONL log file |
+| `-log` | stdout | JSONL debug log (ICE, sessions, MAVLink chatter) |
+| `-flight-log-dir` | `flightlogs` | the flight log: one JSONL file per start, empty = off (see below) |
+
+## Flight log
+
+The drone's own audit record (ARCHITECTURE.md, command model), apart from the debug log and written whether or not a browser is connected. One file per agent start, `flight-<UTC start>.jsonl`. Every line has `ts`, `kind` and `vehicle`:
+
+| `kind` | When | Fields |
+| --- | --- | --- |
+| `agent` | start, shutdown | `what`, `detail` |
+| `session` | a browser session opens or closes | `session`, `what`, `reason` |
+| `command` | every `cmd.request`, accepted or refused | `session`, `requestId`, `command`, `result` |
+| `mission_upload` | every `mission.upload` | `session`, `requestId`, `missionId`, `items`, `result`, `rowsOnVehicle` |
+| `event` | FC mode change, failsafe, RC override, status text | `event` (the `telemetry.event` payload) |
+| `state` | every 1 s armed, every 10 s disarmed | `state` (`VehicleState`) |
+
+Audit records are fsynced; state samples aren't, so a power cut loses at most a few seconds of samples. Sessions are identified by session id only until the server signs session tokens with the user in them. Uploading logs to the server after landing is still to do.

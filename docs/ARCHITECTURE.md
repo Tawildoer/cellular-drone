@@ -87,7 +87,7 @@ The `control` channel accepts a fixed set of JSON messages. The **drone agent** 
 | `mode.qland` | Land vertically now |
 | `video.config` | Bitrate and resolution presets |
 
-No RC override, no `MANUAL_CONTROL`, no direct attitude or velocity setpoints. These are **blocked in the agent**. The agent also logs every command locally, with signed user identity, and uploads the logs later.
+No RC override, no `MANUAL_CONTROL`, no direct attitude or velocity setpoints. These are **blocked in the agent**. The agent also logs every command locally in its flight log (`agent/README.md`), with signed user identity once session tokens carry it (today: the session id), and uploads the logs later.
 
 ## Safety model
 

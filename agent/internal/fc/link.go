@@ -25,7 +25,8 @@ import (
 )
 
 // The agent is the ground station as far as the FC is concerned: sysid 255
-// matches SYSID_MYGCS, so its heartbeats drive the GCS failsafe.
+// matches SYSID_MYGCS. Its heartbeats only tell the FC a commander is
+// connected; FS_GCS_ENABL is 0, so the flight never depends on them (ADR-0020).
 const (
 	gcsSystemID    = 255
 	gcsComponentID = 190 // MAV_COMP_ID_MISSIONPLANNER
@@ -106,7 +107,7 @@ func New(cfg Config) (*Link, error) {
 		OutSystemID:    gcsSystemID,
 		OutComponentID: gcsComponentID,
 		// Heartbeats are sent by hand, only while a commander session is
-		// alive (SetCommanderActive): that's what drives FS_GCS_ENABL.
+		// alive (SetCommanderActive). Informational: no failsafe uses them.
 		HeartbeatDisable: true,
 	}
 	if err := node.Initialize(); err != nil {
@@ -160,8 +161,9 @@ func (l *Link) Run(ctx context.Context) {
 	}
 }
 
-// SetCommanderActive starts or stops the GCS heartbeat. Stopping it is what
-// lets the FC's GCS failsafe notice that nobody is supervising.
+// SetCommanderActive starts or stops the GCS heartbeat. With FS_GCS_ENABL 0
+// (ADR-0020) stopping it changes nothing in the flight; it's just what the
+// FC sees of whether anyone is supervising.
 func (l *Link) SetCommanderActive(active bool) {
 	l.gcsMu.Lock()
 	changed := l.gcsActive != active

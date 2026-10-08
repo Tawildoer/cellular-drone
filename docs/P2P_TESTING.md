@@ -141,8 +141,9 @@ Not part of the P2P work, but worth recording in `docs/OPEN_QUESTIONS.md` / `DEC
 2. **RC and GCS failsafes share `FS_SHORT_ACTN` / `FS_LONG_ACTN` in ArduPlane**, so "GCS loss action configurable per
    mission" can't be set independently of RC loss through parameters alone. Test RC loss and GCS loss while paused in
    QLOITER in SITL (VTOL modes have their own failsafe paths via `Q_OPTIONS`).
-3. **A closed browser vs dead LTE:** the agent stops heartbeats when the browser leaves, so a closed laptop lid while
-   paused triggers RTL. Make it a deliberate choice; consider a grace period.
+3. **A closed browser vs dead LTE:** ~~the agent stops heartbeats when the browser leaves, so a closed laptop lid while
+   paused triggers RTL.~~ Resolved by ADR-0020: no GCS failsafe, and `pause_resume.lua` resumes a commanded pause after
+   120 s.
 4. **`mode.pause` should choose LOITER in fixed-wing flight and QLOITER in hover**, based on `vtolState`. QLOITER during
    cruise forces a back-transition.
 5. **No RTC on the Radxa.** Token expiry and ADR-0013 both need correct time. Define the time source (NTP over LTE,

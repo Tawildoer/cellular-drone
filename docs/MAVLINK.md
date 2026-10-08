@@ -54,7 +54,7 @@ Validation must check every **leg** and **loiter circle** against the polygon, n
 
 | App command | MAVLink | Notes |
 |---|---|---|
-| `arm` / `disarm` | `MAV_CMD_COMPONENT_ARM_DISARM` | Never force-disarm (param2). ArduPilot's own pre-arm checks still apply. 🧪 ArduPlane won't arm in RTL/QRTL/QLAND ("QRTL mode not armable"), and the FC is often in one on the ground: after any RTL landing, and at power-up, because the GCS failsafe fires before a browser connects (the agent heartbeats only with a commander session). So `arm` on the ground first switches such modes to QLOITER. |
+| `arm` / `disarm` | `MAV_CMD_COMPONENT_ARM_DISARM` | Never force-disarm (param2). ArduPilot's own pre-arm checks still apply. 🧪 ArduPlane won't arm in RTL/QRTL/QLAND ("QRTL mode not armable"), and the FC is left in QRTL on the ground after any RTL landing. (Before ADR-0020 the GCS failsafe also put it there at power-up.) So `arm` on the ground first switches such modes to QLOITER. |
 | `mission.start` | Set mode AUTO (`MAV_CMD_DO_SET_MODE`) | Armed, on the ground, first item `NAV_VTOL_TAKEOFF`. |
 | `mode.pause` | Set mode QLOITER if hovering, else LOITER | |
 | `mode.resume` | Set mode AUTO | Continues the current item (`MIS_RESTART` = 0). |

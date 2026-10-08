@@ -99,6 +99,9 @@ test('RC takeover blocks browser commands until the pilot hands back', async ({ 
     await arm(page)
     await hold(page.getByRole('button', { name: 'Hold to start mission' }))
     await expect(tile(page, 'Flight mode')).toHaveText('AUTO')
+    // Climb first: ArduPlane reports VTOL state FW on the ground in FBWA (SITL's
+    // boot mode), so "FW" alone can be true before the VTOL takeoff starts.
+    await waitForAltitude(page, 30)
     await expect(tile(page, 'VTOL state')).toHaveText('FW', { timeout: 2 * 60_000 })
   })
 

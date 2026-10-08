@@ -57,7 +57,7 @@ export default async function globalSetup() {
   const agent = start(
     'agent',
     path.join(BIN_DIR, 'agent'),
-    ['-fc', 'tcp:127.0.0.1:5760', '-video-cmd', '', '-stun', '', '-vehicle', 'drone-1'],
+    ['-fc', 'tcp:127.0.0.1:5760', '-video-cmd', '', '-stun', '', '-vehicle', 'drone-1', '-flight-log-dir', LOG_DIR],
     agentDir,
   )
 

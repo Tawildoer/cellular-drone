@@ -26,11 +26,9 @@ func (l *Link) Command(ctx context.Context, cmd protocol.Command) protocol.Comma
 		if !landed {
 			return protocol.Rejected("arm only on the ground")
 		}
-		// ArduPlane won't arm in RTL/QRTL/QLAND, and the FC is often left in
-		// one on the ground: after any RTL landing, and at power-up, when the
-		// GCS failsafe fires because no browser is connected yet (FS_GCS_ENABL,
-		// ARCHITECTURE.md). QLOITER holds on the ground at zero throttle;
-		// mission.start then switches to AUTO.
+		// ArduPlane won't arm in RTL/QRTL/QLAND, and the FC is left in QRTL
+		// on the ground after any RTL landing (ADR-0020). QLOITER holds on
+		// the ground at zero throttle; mission.start then switches to AUTO.
 		l.mu.Lock()
 		mode := l.st.mode
 		l.mu.Unlock()

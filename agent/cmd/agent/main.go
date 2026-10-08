@@ -21,6 +21,7 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/tomwildoer/cellular-drone/agent/internal/fc"
+	"github.com/tomwildoer/cellular-drone/agent/internal/flightlog"
 	"github.com/tomwildoer/cellular-drone/agent/internal/protocol"
 	"github.com/tomwildoer/cellular-drone/agent/internal/session"
 	"github.com/tomwildoer/cellular-drone/agent/internal/signalling"
@@ -50,7 +51,8 @@ func main() {
 	videoCmd := flag.String("video-cmd", defaultVideoCmd, "encoder command sending H.264 RTP to 127.0.0.1:{port} (empty = no video)")
 	videoPort := flag.Int("video-port", 5004, "local UDP port the encoder sends RTP to")
 	fcAddr := flag.String("fc", "", "flight controller MAVLink: tcp:HOST:PORT (SITL, e.g. tcp:127.0.0.1:5760) or serial:DEVICE:BAUD (e.g. serial:/dev/ttyS2:921600); empty = link-test mode with no FC")
-	logPath := flag.String("log", "-", "JSONL log file (- = stdout)")
+	logPath := flag.String("log", "-", "JSONL debug log file (- = stdout)")
+	flightLogDir := flag.String("flight-log-dir", "flightlogs", "directory for the flight log: commands, uploads, FC events and state samples, one JSONL file per start (empty = off)")
 	homeLat := flag.Float64("home-lat", -37.861, "reported home latitude")
 	homeLon := flag.Float64("home-lon", 145.062, "reported home longitude")
 	iceDisconnected := flag.Duration("ice-disconnected", 4*time.Second, "ICE disconnected timeout")
@@ -72,6 +74,17 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	var flightLog *flightlog.Log
+	if *flightLogDir != "" {
+		var err error
+		if flightLog, err = flightlog.Open(*flightLogDir, *vehicleID, log); err != nil {
+			log.Error("flight_log_open_failed", "error", err.Error())
+			os.Exit(1)
+		}
+		defer flightLog.Close()
+		log.Info("flight_log", "path", flightLog.Path())
+	}
 
 	var videoSource *video.Source
 	if *videoCmd != "" {
@@ -96,6 +109,7 @@ func main() {
 			VehicleID: *vehicleID,
 			Log:       log,
 			OnEvent: func(ev fc.Event) {
+				flightLog.Event(ev)
 				if manager != nil {
 					manager.BroadcastEvent(ev)
 				}
@@ -106,6 +120,7 @@ func main() {
 			os.Exit(1)
 		}
 		go link.Run(ctx)
+		go flightLog.Sample(link.State, ctx.Done())
 		vehicle = link
 	}
 
@@ -121,6 +136,7 @@ func main() {
 		ICEKeepalive:           *iceKeepalive,
 		TelemetryInterval:      100 * time.Millisecond,
 		FailedGrace:            2 * time.Minute,
+		FlightLog:              flightLog,
 	}, videoSource, vehicle, func(msg protocol.Signalling) { client.Send(msg) }, log)
 	if err != nil {
 		log.Error("webrtc_init_failed", "error", err.Error())
@@ -139,8 +155,10 @@ func main() {
 	}, log)
 
 	log.Info("agent_started", "signal", *signalURL, "video", *videoCmd != "", "iface", *iface, "fc", *fcAddr)
+	flightLog.Agent("started", map[string]any{"fc": *fcAddr, "signal": *signalURL})
 	client.Run(ctx)
 	manager.CloseAll("agent shutting down")
+	flightLog.Agent("stopping", nil)
 }
 
 func iceServers(urls string) []webrtc.ICEServer {

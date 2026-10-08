@@ -18,6 +18,7 @@ import (
 	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v4"
 
+	"github.com/tomwildoer/cellular-drone/agent/internal/flightlog"
 	"github.com/tomwildoer/cellular-drone/agent/internal/mission"
 	"github.com/tomwildoer/cellular-drone/agent/internal/protocol"
 	"github.com/tomwildoer/cellular-drone/agent/internal/video"
@@ -32,8 +33,9 @@ type Vehicle interface {
 	Command(ctx context.Context, cmd protocol.Command) protocol.CommandResult
 	UploadMission(ctx context.Context, m mission.Mission) (protocol.CommandResult, []mission.Row)
 	CurrentMission(ctx context.Context) (*mission.Mission, error)
-	// SetCommanderActive starts or stops the GCS heartbeat that keeps the
-	// FC's GCS failsafe from firing.
+	// SetCommanderActive starts or stops the agent's GCS heartbeat. It's
+	// informational only: FS_GCS_ENABL is 0, so the flight never depends on
+	// it (ADR-0020).
 	SetCommanderActive(active bool)
 }
 
@@ -61,6 +63,9 @@ type Config struct {
 	// FailedGrace is how long a failed connection is kept for the browser to
 	// ICE-restart it before the session is torn down.
 	FailedGrace time.Duration
+	// FlightLog is the drone's audit record of sessions, commands and
+	// uploads. Nil = not recorded.
+	FlightLog *flightlog.Log
 }
 
 type SendFunc func(protocol.Signalling)
@@ -157,6 +162,7 @@ func (m *Manager) HandleOffer(msg protocol.Signalling) {
 			return
 		}
 		log.Info("session_created")
+		m.cfg.FlightLog.Session(msg.SessionID, "opened", "")
 	} else {
 		log.Info("renegotiation_offer")
 	}
@@ -204,8 +210,9 @@ func (m *Manager) snapshot() []*Session {
 }
 
 // updateCommander keeps the GCS heartbeat running while any session has an
-// open control channel. One commander at a time is a later refinement
-// (ARCHITECTURE.md, Session flow step 6).
+// open control channel, so the FC (and its logs) can see someone is
+// supervising. Nothing in the flight depends on it (ADR-0020). One commander
+// at a time is a later refinement (ARCHITECTURE.md, Session flow step 6).
 func (m *Manager) updateCommander() {
 	if m.vehicle == nil {
 		return
@@ -390,6 +397,7 @@ func (s *Session) close(reason string) {
 		s.m.mu.Unlock()
 		s.m.updateCommander()
 		s.log.Info("session_closed", "reason", reason)
+		s.m.cfg.FlightLog.Session(s.id, "closed", reason)
 	})
 }
 
@@ -431,8 +439,9 @@ func (s *Session) sendStatus(dc *webrtc.DataChannel, text string) {
 }
 
 // handleControl answers requests on the reliable channel. Every command and
-// upload is logged with its result (the audit trail ARCHITECTURE.md asks
-// for). With no flight controller (link-test mode) they're refused, not faked.
+// upload is logged with its result, in the debug log and the flight log
+// (the audit trail ARCHITECTURE.md asks for). With no flight controller
+// (link-test mode) they're refused, not faked.
 func (s *Session) handleControl(dc *webrtc.DataChannel, data []byte) {
 	var env protocol.Envelope
 	if err := json.Unmarshal(data, &env); err != nil || env.V != protocol.Version {
@@ -450,15 +459,19 @@ func (s *Session) handleControl(dc *webrtc.DataChannel, data []byte) {
 	case "ping":
 		reply, err = protocol.Encode("pong", env.ID, struct{}{})
 	case "cmd.request":
+		var cmd protocol.Command
+		_ = json.Unmarshal(env.Payload, &cmd)
+		result := protocol.Rejected(noFlightControllerDetail)
 		s.log.Info("command", "request_id", env.ID, "payload", string(env.Payload), "result", "rejected")
-		reply, err = protocol.Encode("cmd.result", env.ID, protocol.Rejected(noFlightControllerDetail))
+		s.m.cfg.FlightLog.Command(s.id, env.ID, cmd, result)
+		reply, err = protocol.Encode("cmd.result", env.ID, result)
 	case "mission.upload":
-		var mission struct {
-			ID string `json:"id"`
-		}
-		_ = json.Unmarshal(env.Payload, &mission)
-		s.log.Info("mission_upload", "request_id", env.ID, "mission_id", mission.ID, "result", "rejected")
-		reply, err = protocol.Encode("mission.uploaded", env.ID, protocol.MissionUploaded{MissionID: mission.ID, Result: protocol.Rejected(noFlightControllerDetail)})
+		var m mission.Mission
+		_ = json.Unmarshal(env.Payload, &m)
+		result := protocol.Rejected(noFlightControllerDetail)
+		s.log.Info("mission_upload", "request_id", env.ID, "mission_id", m.ID, "result", "rejected")
+		s.m.cfg.FlightLog.MissionUpload(s.id, env.ID, m.ID, len(m.Items), result, 0)
+		reply, err = protocol.Encode("mission.uploaded", env.ID, protocol.MissionUploaded{MissionID: m.ID, Result: result})
 	case "mission.download":
 		reply, err = protocol.Encode("mission.current", env.ID, nil)
 	default:
@@ -484,6 +497,7 @@ func (s *Session) handleVehicleRequest(dc *webrtc.DataChannel, v Vehicle, env pr
 			result = v.Command(ctx, cmd)
 		}
 		s.log.Info("command", "request_id", env.ID, "type", cmd.Type, "ok", result.OK, "reason", result.Reason, "detail", result.Detail)
+		s.m.cfg.FlightLog.Command(s.id, env.ID, cmd, result)
 		reply, err = protocol.Encode("cmd.result", env.ID, result)
 	case "mission.upload":
 		var m mission.Mission
@@ -492,6 +506,7 @@ func (s *Session) handleVehicleRequest(dc *webrtc.DataChannel, v Vehicle, env pr
 			result, rows = v.UploadMission(ctx, m)
 		}
 		s.log.Info("mission_upload", "request_id", env.ID, "mission_id", m.ID, "ok", result.OK, "detail", result.Detail, "rows", len(rows))
+		s.m.cfg.FlightLog.MissionUpload(s.id, env.ID, m.ID, len(m.Items), result, len(rows))
 		reply, err = protocol.Encode("mission.uploaded", env.ID, protocol.MissionUploaded{MissionID: m.ID, Result: result, OnVehicle: rows})
 	case "mission.download":
 		current, derr := v.CurrentMission(ctx)

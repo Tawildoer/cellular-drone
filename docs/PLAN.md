@@ -46,14 +46,14 @@ Do this before new planner features (ADR-0017). Mapping reference: `docs/MAVLINK
   - [x] Wire `mission.Translate` into the agent's `mission.upload`: MAVLink upload with retries, readback into `onVehicle`, seq ↔ app index for `MISSION_CURRENT`, fence upload + `FENCE_ALT_MAX`, stored mission identity (and adopting a mission already on the FC)
   - [x] Decide clock-mode loiter: Lua script on the FC, `sim/scripts/loiter_until.lua`, proven in SITL (ADR-0017)
   - [ ] Fly the same missions in MockLink and SITL; tune the mock to SITL (waypoint reached, RTL altitude, turn radius, cruise speed: SITL cruises at 25 m/s, see docs/MAVLINK.md)
-  - [ ] Fly a mission from the browser through WebRtcLink → agent → SITL: written as `web/e2e-sitl` (`npm run e2e:sitl`), flight + RC takeover; not run yet
+  - [x] Fly a mission from the browser through WebRtcLink → agent → SITL: `web/e2e-sitl` (`npm run e2e:sitl`), flight + RC takeover. (2026-10-08: both pass, 4.1 min)
   - [ ] More SITL scenarios: browser closed mid-mission, agent killed mid-flight, mission changed from another ground station
   - [ ] Data channels: `telemetry` (unreliable) and `control` (reliable), carrying the **same `protocol/` v1 messages** as MockLink
   - [x] Command whitelist and safety gate. Mission upload, download and verify state machine. (Flown end to end in SITL by `cmd/sitlcheck`; not yet from a browser)
-  - [x] GCS heartbeat only while a commander session is alive (this drives the FC failsafe). (Any session with an open control channel counts; one-commander rule still to do)
+  - [x] GCS heartbeat only while a commander session is alive. Informational since ADR-0020 (`FS_GCS_ENABL 0`): no failsafe depends on it. (Any session with an open control channel counts; one-commander rule still to do)
   - [~] RC-override awareness: report RC link and mode-switch state; refuse browser mode changes while RC holds a manual mode. (Detects a pilot mode the agent didn't command; reading the actual switch position via `FLTMODE_CH` is still to do)
   - [ ] Video track: test pattern in SITL mode
-  - [ ] Local command and flight log (JSONL)
+  - [x] Local command and flight log (JSONL): `internal/flightlog`, `-flight-log-dir`; sessions, commands, uploads, FC events, state samples (2026-10-08). Upload to the server is Phase 1c
   - [ ] WSS client to signalling with a per-drone key; verify the Ed25519 session token before answering an offer
 - [ ] Generate JSON Schema from the zod `protocol/` definitions; Go types generated from it or hand-mirrored with tests
 
