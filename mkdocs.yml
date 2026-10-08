@@ -1,0 +1,63 @@
+site_name: Cellular VTOL drone
+site_description: Autonomous ArduPlane QuadPlane supervised over 4G/LTE from the browser. What's done, what's next, and why.
+repo_url: https://github.com/Tawildoer/cellular-drone
+repo_name: Tawildoer/cellular-drone
+edit_uri: edit/main/docs/
+docs_dir: docs
+
+nav:
+  - Home: index.md
+  - Status: status.md
+  - Progress log: progress-log.md
+  - Plan: PLAN.md
+  - Design:
+      - Architecture: ARCHITECTURE.md
+      - Frontend contract: FRONTEND.md
+      - ArduPilot / MAVLink mapping: MAVLINK.md
+      - Decisions (ADRs): DECISIONS.md
+  - Testing:
+      - P2P link testing: P2P_TESTING.md
+  - Open questions: OPEN_QUESTIONS.md
+  - Bill of materials: BOM.md
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: custom
+    accent: custom
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - content.code.copy
+    - toc.follow
+
+extra_css:
+  - stylesheets/extra.css
+
+hooks:
+  - docs-hooks/plan_progress.py
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+not_in_nav: |
+  /stylesheets/

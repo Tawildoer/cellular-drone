@@ -6,3 +6,5 @@ dist/
 logs/
 *.tlog
 .DS_Store
+site/
+.venv-docs/

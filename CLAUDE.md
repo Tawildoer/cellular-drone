@@ -4,6 +4,7 @@ A fixed-wing **VTOL (ArduPlane QuadPlane)** that flies **autonomous missions onl
 
 ## Read first
 - `docs/PLAN.md`: phased plan and current status. **Update the checkboxes as work completes.**
+- Docs site (MkDocs, `mkdocs.yml`): `docs/status.md` (its progress table is generated from PLAN.md's checkboxes by `docs-hooks/plan_progress.py`) and `docs/progress-log.md`. **When work lands, add a dated entry to the progress log and refresh the status summary in the same change.** Build with `pip install -r requirements-docs.txt && mkdocs serve`; `mkdocs build --strict` must pass.
 - `docs/ARCHITECTURE.md`: system design, session flow, command model, safety
 - `docs/DECISIONS.md`: ADRs. Add new decisions here; don't silently change direction.
 - `docs/FRONTEND.md`: **frontend contract and layering. Required reading before touching `web/`.**

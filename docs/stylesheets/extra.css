@@ -1,0 +1,39 @@
+/* The console's own colours (web/src/index.css, ADR-0010): near-black,
+   cyan accent, so the docs read as part of the same project. */
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #0a0a0f;
+  --md-default-fg-color--light: rgba(232, 234, 237, 0.7);
+  --md-primary-fg-color: #0d1b24;
+  --md-primary-bg-color: #e8eaed;
+  --md-accent-fg-color: #00d4ff;
+  --md-typeset-a-color: #00d4ff;
+  --md-code-bg-color: #12121c;
+  --md-footer-bg-color: #0d1b24;
+}
+
+/* The status table's progress bars line up in the mono font. */
+.md-typeset td code {
+  background: none;
+  color: #00d4ff;
+  letter-spacing: -0.05em;
+}
+
+/* Status chips: done / next / waiting. */
+.md-typeset .chip {
+  display: inline-block;
+  padding: 0 0.5em;
+  border-radius: 0.6em;
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: 0.1em;
+}
+.md-typeset .chip.done { background: rgba(12, 163, 12, 0.18); color: #3fd63f; }
+.md-typeset .chip.next { background: rgba(0, 212, 255, 0.15); color: #00d4ff; }
+.md-typeset .chip.wait { background: rgba(250, 178, 25, 0.15); color: #fab219; }
+
+/* Keep each bar and its percentage on one line. */
+.md-typeset td:last-child {
+  white-space: nowrap;
+}

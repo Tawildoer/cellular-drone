@@ -32,7 +32,7 @@ Order: **frontend first against a mock vehicle**, then the real backend undernea
 - [x] Planner: ArduPilot mission panel (preview rows, issues, vehicle readback match) and `.waypoints` export (ADR-0017 addendum, 2026-10-07). Removed from the UI 2026-10-08 as clutter; the translator, readback and golden tests stay
 - [x] Planner: height profile over terrain with clearance warnings, distance and time estimates at ArduPlane SITL figures (ADR-0021, 2026-10-08)
 - [x] Planner: "Follow terrain at X m" sets heights from the terrain and adds waypoints over ridges (ADR-0021 addendum, 2026-10-08). Native ArduPlane terrain following is a later ADR
-- [ ] UI: preflight checklist gate + command bar with hold/slide-to-confirm
+- [x] UI: preflight checklist gate + command bar with hold-to-confirm (arm, start, RTL, QLAND)
 - [ ] Dev panel for MockLink fault injection
 - [ ] Playwright smoke: login → plan → upload → arm → start → pause/resume → RTL
 - [ ] Check it on Chrome desktop (laptop, primary target now). Chrome Android / iOS Safari (phone layout) deferred — same components, verify later.
@@ -50,7 +50,7 @@ Do this before new planner features (ADR-0017). Mapping reference: `docs/MAVLINK
   - [ ] Fly the same missions in MockLink and SITL; tune the mock to SITL (waypoint reached, RTL altitude, turn radius, cruise speed: SITL cruises at 25 m/s, see docs/MAVLINK.md)
   - [x] Fly a mission from the browser through WebRtcLink → agent → SITL: `web/e2e-sitl` (`npm run e2e:sitl`), flight, RC takeover by the mode switch, and start needing the switch at AUTO. (2026-10-08: all three pass, 5.6 min)
   - [ ] More SITL scenarios: browser closed mid-mission, agent killed mid-flight, mission changed from another ground station
-  - [ ] Data channels: `telemetry` (unreliable) and `control` (reliable), carrying the **same `protocol/` v1 messages** as MockLink
+  - [x] Data channels: `telemetry` (unreliable) and `control` (reliable), carrying the **same `protocol/` v1 messages** as MockLink (flown end to end by `web/e2e-sitl`, 2026-10-08)
   - [x] Command whitelist and safety gate. Mission upload, download and verify state machine. (Flown end to end in SITL by `cmd/sitlcheck`; not yet from a browser)
   - [x] GCS heartbeat only while a commander session is alive. Informational since ADR-0020 (`FS_GCS_ENABL 0`): no failsafe depends on it. (Any session with an open control channel counts; one-commander rule still to do)
   - [x] RC-override awareness: report RC link and mode-switch state; refuse browser mode changes while RC holds a manual mode. (2026-10-08: switch position read via `FLTMODE_CH`, reported as `rc.modeSwitch`; off AUTO while armed is an override; start needs RC linked + switch at AUTO. Proven in SITL with `cmd/sitlpilot -switch`. Still open: a LOITER-switch test that a pilot's loiter isn't time-limited, ADR-0020)
