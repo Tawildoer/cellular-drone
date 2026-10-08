@@ -10,6 +10,7 @@ What each working session delivered, newest first. Commit hashes link to the cha
 - **HUD link strength as a smooth line**: a continuous 0–100% score over the last 10 s, sampled four times a second; the mock now reports realistic LTE conditions so the demo shows it.
 - **RC mode switch read directly** ([`cc92a6d`](https://github.com/Tawildoer/cellular-drone/commit/cc92a6d)): the agent reads `FLTMODE_CH`, reports the switch position, treats the switch off AUTO as a takeover, and only starts a mission with it at AUTO. The SITL test pilot now moves the simulated switch. All three SITL tests pass (5.6 min).
 - **Docs**: ADR-0021, this site.
+- **Open source** (ADR-0022): Apache-2.0, `SECURITY.md`, a new README, the docs on GitHub Pages. The agent now refuses every browser session until server-signed tokens exist, unless started with `-insecure-dev-tokens` (SITL and bench only). History scrubbed of real IP addresses and personal email before the repo went public.
 
 ## 2026-10-07: ArduPilot becomes the reference
 

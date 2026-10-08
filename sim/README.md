@@ -46,7 +46,7 @@ Each test restarts SITL. Logs land in `web/test-results-sitl/`, the report in `w
 
 ```bash
 cd server && npm start                                          # signalling on :8788
-cd agent && go run ./cmd/agent -fc tcp:127.0.0.1:5760 -video-cmd ""
+cd agent && go run ./cmd/agent -fc tcp:127.0.0.1:5760 -video-cmd "" -insecure-dev-tokens
 cd web && VITE_VEHICLE_LINK=webrtc npm run dev                  # open the app, pick Drone 1
 ```
 

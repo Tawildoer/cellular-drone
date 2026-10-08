@@ -1,0 +1,8 @@
+cellular-drone
+Copyright 2026 The cellular-drone authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It is not a part of, and is not endorsed by, the ArduPilot project. ArduPilot
+itself (fetched by sim/Dockerfile to build SITL) is GPL-3.0 and is not
+redistributed here.

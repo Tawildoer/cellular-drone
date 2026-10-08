@@ -26,7 +26,7 @@ headers are needed to build it.
 
 ```bash
 cd server && npm start                         # signalling on :8788
-cd agent && ./bin/agent \
+cd agent && ./bin/agent -insecure-dev-tokens \
   -video-cmd "ffmpeg -loglevel error -re -f lavfi -i testsrc=size=1280x720:rate=30 -pix_fmt yuv420p -c:v libx264 -profile:v baseline -tune zerolatency -preset ultrafast -b:v 1500k -g 30 -f h264 -"
 cd web && VITE_VEHICLE_LINK=webrtc npm run dev  # then open the app and pick Drone 1
 ```
@@ -35,8 +35,8 @@ cd web && VITE_VEHICLE_LINK=webrtc npm run dev  # then open the app and pick Dro
 
 See `../sim/README.md`. In short: `docker compose up -d` in `sim/`, then
 `go run ./cmd/sitlcheck` for a scripted flight with no browser, or
-`go run ./cmd/agent -fc tcp:127.0.0.1:5760 -video-cmd ""` to fly it from
-the browser.
+`go run ./cmd/agent -fc tcp:127.0.0.1:5760 -video-cmd "" -insecure-dev-tokens`
+to fly it from the browser.
 
 ## Run on the Raspberry Pi 5
 
@@ -45,7 +45,7 @@ is software x264 from GStreamer:
 
 ```bash
 sudo apt install -y gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly stun-client
-./agent-linux-arm64 -signal wss://<signalling host>/signal -iface wlan0 -log agent.jsonl
+./agent-linux-arm64 -signal wss://<signalling host>/signal -iface wlan0 -log agent.jsonl -insecure-dev-tokens
 ```
 
 `-iface wlan0` keeps ICE on the real network (VPN interfaces like Tailscale
@@ -64,6 +64,7 @@ reading glass-to-glass latency off the browser.
 | `-iface` | all but VPN/tunnel | restrict ICE to one interface |
 | `-ice-disconnected` / `-ice-failed` / `-ice-keepalive` | 4s / 15s / 1s | tuned for cellular |
 | `-log` | stdout | JSONL debug log (ICE, sessions, MAVLink chatter) |
+| `-insecure-dev-tokens` | off | accept unsigned session tokens. **SITL and bench only**: anyone who can reach the signalling server can command the vehicle. Without it the agent refuses every browser until server auth lands (Phase 1c, `../SECURITY.md`) |
 | `-flight-log-dir` | `flightlogs` | the flight log: one JSONL file per start, empty = off (see below) |
 
 ## Flight log

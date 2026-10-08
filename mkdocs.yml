@@ -1,4 +1,5 @@
 site_name: Cellular VTOL drone
+site_url: https://tawildoer.github.io/cellular-drone/
 site_description: Autonomous ArduPlane QuadPlane supervised over 4G/LTE from the browser. What's done, what's next, and why.
 repo_url: https://github.com/Tawildoer/cellular-drone
 repo_name: Tawildoer/cellular-drone

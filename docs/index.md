@@ -35,7 +35,7 @@ flowchart LR
 | --- | --- |
 | Web console against the mock | `cd web && npm run dev` |
 | ArduPlane SITL | `cd sim && docker compose up -d` |
-| Agent against SITL | `cd agent && go run ./cmd/agent -fc tcp:127.0.0.1:5760 -video-cmd ""` |
+| Agent against SITL | `cd agent && go run ./cmd/agent -fc tcp:127.0.0.1:5760 -video-cmd "" -insecure-dev-tokens` |
 | Browser → agent → SITL e2e | `cd web && npm run e2e:sitl` |
 | This site | `pip install -r requirements-docs.txt && mkdocs serve` |
 

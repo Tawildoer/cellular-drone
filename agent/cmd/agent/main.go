@@ -52,6 +52,7 @@ func main() {
 	videoPort := flag.Int("video-port", 5004, "local UDP port the encoder sends RTP to")
 	fcAddr := flag.String("fc", "", "flight controller MAVLink: tcp:HOST:PORT (SITL, e.g. tcp:127.0.0.1:5760) or serial:DEVICE:BAUD (e.g. serial:/dev/ttyS2:921600); empty = link-test mode with no FC")
 	logPath := flag.String("log", "-", "JSONL debug log file (- = stdout)")
+	insecureDevTokens := flag.Bool("insecure-dev-tokens", false, "accept unsigned session tokens: anyone who can reach the signalling server can command the vehicle. SITL and bench only, until server auth (Phase 1c, SECURITY.md)")
 	flightLogDir := flag.String("flight-log-dir", "flightlogs", "directory for the flight log: commands, uploads, FC events and state samples, one JSONL file per start (empty = off)")
 	homeLat := flag.Float64("home-lat", -37.861, "reported home latitude")
 	homeLon := flag.Float64("home-lon", 145.062, "reported home longitude")
@@ -137,6 +138,7 @@ func main() {
 		TelemetryInterval:      100 * time.Millisecond,
 		FailedGrace:            2 * time.Minute,
 		FlightLog:              flightLog,
+		InsecureDevTokens:      *insecureDevTokens,
 	}, videoSource, vehicle, func(msg protocol.Signalling) { client.Send(msg) }, log)
 	if err != nil {
 		log.Error("webrtc_init_failed", "error", err.Error())
@@ -155,7 +157,12 @@ func main() {
 	}, log)
 
 	log.Info("agent_started", "signal", *signalURL, "video", *videoCmd != "", "iface", *iface, "fc", *fcAddr)
-	flightLog.Agent("started", map[string]any{"fc": *fcAddr, "signal": *signalURL})
+	if *insecureDevTokens {
+		log.Warn("insecure_dev_tokens", "detail", "accepting unsigned session tokens: anyone who can reach the signalling server can command the vehicle. SITL and bench only.")
+	} else {
+		log.Warn("sessions_refused", "detail", "session tokens can't be verified until server auth lands (Phase 1c), so no browser can connect. Use -insecure-dev-tokens on SITL or a bench.")
+	}
+	flightLog.Agent("started", map[string]any{"fc": *fcAddr, "signal": *signalURL, "insecureDevTokens": *insecureDevTokens})
 	client.Run(ctx)
 	manager.CloseAll("agent shutting down")
 	flightLog.Agent("stopping", nil)

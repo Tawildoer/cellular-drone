@@ -50,4 +50,4 @@ The software is ahead of the hardware, as planned. **Phase 1 runs end to end aga
 - **Planner estimates use SITL's figures**, not the real airframe's; no battery estimate until Phase 3 data exists.
 - **Follow terrain is done by the planner**, between waypoints only; ArduPlane's own terrain following (which also covers RTL) is a later ADR.
 - **The mock still flies differently from ArduPlane** in places (cruise speed, waypoint radius, RTL altitude): listed in [the MAVLink mapping](MAVLINK.md#mock-vs-arduplane).
-- **Sessions are identified by id, not user**, until the server signs session tokens.
+- **No authentication yet** (Phase 1c): the agent refuses every browser unless started with `-insecure-dev-tokens`, for SITL and the bench only. Sessions are identified by id, not user. See `SECURITY.md` in the repository root.

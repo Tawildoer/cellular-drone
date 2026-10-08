@@ -196,3 +196,15 @@ Raw ICE detail lives in the agent's JSONL log and the browser console (`[WebRtcL
 - **Above-home heights can pass the 120 m limit** over a valley-to-hill route even though the aircraft is X above the ground; validation still checks height above home, which is the conservative reading until a terrain-aware limit is decided.
 - **Native ArduPlane terrain following** (`MAV_FRAME_GLOBAL_TERRAIN_ALT`, `TERRAIN_ENABLE`/`TERRAIN_FOLLOW`, a terrain database on the FC's SD card or served by the agent in reply to `TERRAIN_REQUEST`) holds the height continuously and covers RTL. It's the better answer for the real aircraft: a later ADR, proven in SITL first.
 
+## ADR-0022: Open source under Apache-2.0; the agent refuses unsigned sessions by default (2026-10-08, accepted)
+**Context:** The repository goes public. Its safety mustn't depend on the code being secret, and the code is open about a real gap: server authentication (Phase 1c) isn't built, and the agent's session-token check only insisted a token was present, so anyone reaching a signalling server could command a vehicle behind it.
+**Decision:**
+- **Apache-2.0** (permissive, with a patent grant). ArduPilot (GPL-3.0) is fetched to build SITL, not redistributed.
+- **The agent refuses every browser session by default** until it can verify server-signed tokens. `-insecure-dev-tokens` accepts any non-empty token, with a warning in the log and the flight log, for SITL and the bench only; the SITL e2e setup and the documented dev commands pass it.
+- **`SECURITY.md`** states the threat model, what's protected today and what isn't, and asks for private vulnerability reports.
+- **History rewritten before going public**: real IP addresses from the link tests replaced with documentation addresses, and commit emails set to the GitHub no-reply address. No secrets were ever committed (checked across all history).
+- The docs site publishes to GitHub Pages from `.github/workflows/docs.yml`.
+**Consequences:**
+- A real aircraft can't be commanded through an unauthenticated server by accident: it takes a deliberate flag.
+- When Phase 1c lands, `verifySessionToken` checks the Ed25519 signature and the flag goes away.
+

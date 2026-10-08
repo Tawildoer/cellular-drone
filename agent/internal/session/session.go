@@ -66,6 +66,9 @@ type Config struct {
 	// FlightLog is the drone's audit record of sessions, commands and
 	// uploads. Nil = not recorded.
 	FlightLog *flightlog.Log
+	// InsecureDevTokens accepts unsigned session tokens: anyone who can reach
+	// the signalling server can command the vehicle. SITL and bench only.
+	InsecureDevTokens bool
 }
 
 type SendFunc func(protocol.Signalling)
@@ -131,13 +134,23 @@ func isTunnelInterface(name string) bool {
 	return false
 }
 
+// errTokensUnverifiable: nothing can verify a session token yet, so without
+// -insecure-dev-tokens every browser is turned away (SECURITY.md).
+var errTokensUnverifiable = errors.New("session tokens can't be verified yet (server signing is Phase 1c): " +
+	"refusing every session; -insecure-dev-tokens accepts unsigned ones, for SITL and the bench only")
+
 // verifySessionToken is where the server-signed Ed25519 session token gets
 // checked before answering (ARCHITECTURE.md, session flow step 4). Until the
-// server signs tokens it only insists one is present, so the check stays in
-// the code path rather than being bolted on later.
-func verifySessionToken(token string) error {
+// server signs tokens there's nothing to check a token against, so the agent
+// refuses everyone unless it was started with -insecure-dev-tokens, which
+// accepts any non-empty token: fine on a bench or against SITL, never on an
+// aircraft whose signalling server is reachable from the internet.
+func verifySessionToken(token string, insecureDev bool) error {
 	if token == "" {
 		return errors.New("missing session token")
+	}
+	if !insecureDev {
+		return errTokensUnverifiable
 	}
 	return nil
 }
@@ -146,7 +159,7 @@ func verifySessionToken(token string) error {
 // restart) of an existing one.
 func (m *Manager) HandleOffer(msg protocol.Signalling) {
 	log := m.log.With("session", msg.SessionID)
-	if err := verifySessionToken(msg.SessionToken); err != nil {
+	if err := verifySessionToken(msg.SessionToken, m.cfg.InsecureDevTokens); err != nil {
 		log.Warn("offer_rejected", "error", err.Error())
 		return
 	}
