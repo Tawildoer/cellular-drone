@@ -17,6 +17,7 @@ import type { GeoPoint, Mission, VehicleState } from '../../domain'
 import {
   aircraftMarkerScale,
   appendTrailPoint,
+  MAX_TRAIL_POINTS,
   buildAircraftMarkerGeoJson,
   buildFenceGeoJson,
   buildFloatingTrailGeoJson,
@@ -430,7 +431,7 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
         source: TRAIL_SOURCE,
         layout: { visibility: 'none' }, // by camera zoom: syncZoomLayers
         paint: {
-          // Older segments darken towards the map (buildFloatingTrailGeoJson).
+          // Expiring segments darken towards the map (buildFloatingTrailGeoJson).
           'fill-extrusion-color': ['interpolate', ['linear'], ['get', 'fade'], 0, '#0b2a33', 0.6, '#0a8fb0', 1, '#00d4ff'],
           'fill-extrusion-height': ['get', 'top'],
           'fill-extrusion-base': ['get', 'base'],
@@ -519,29 +520,16 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       // FLAT_OVERLAY_MAX_ZOOM): fixed pixel widths, drawn in this order with no
       // depth, so nothing can fight. Same colours and dashing as the 3D set.
       // Shown below FLAT_OVERLAY_MAX_ZOOM by syncZoomLayers, not a maxzoom.
-      const lineShape = { 'line-join': 'round', 'line-cap': 'round' } as const
-      // lineMetrics: the trail fades from transparent at its oldest end to
-      // full at the aircraft, so dropping the oldest point doesn't jump.
-      map.addSource(TRAIL_FLAT_SOURCE, { type: 'geojson', lineMetrics: true, data: buildTrailLineGeoJson(trailRef.current) })
+      // Expiring pieces of trail fade out by age (buildTrailLineGeoJson).
+      // Butt caps: round ones would overlap, and show as dots, where
+      // half-transparent segments meet.
+      map.addSource(TRAIL_FLAT_SOURCE, { type: 'geojson', data: buildTrailLineGeoJson(trailRef.current, Date.now()) })
       map.addLayer({
         id: TRAIL_FLAT_SOURCE,
         type: 'line',
         source: TRAIL_FLAT_SOURCE,
-        layout: lineShape,
-        paint: {
-          'line-width': 2.5,
-          'line-gradient': [
-            'interpolate',
-            ['linear'],
-            ['line-progress'],
-            0,
-            'rgba(0, 212, 255, 0)',
-            0.5,
-            'rgba(0, 212, 255, 0.55)',
-            1,
-            'rgba(0, 212, 255, 1)',
-          ],
-        },
+        layout: { 'line-join': 'round', 'line-cap': 'butt' },
+        paint: { 'line-color': '#00d4ff', 'line-width': 2.5, 'line-opacity': ['get', 'fade'] },
       })
       map.addSource(MISSION_PATH_FLAT_SOURCE, { type: 'geojson', data: flatPathGeoJson(mission, vehicleState, false) })
       map.addLayer({
@@ -614,7 +602,7 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       setSourceData(map, MISSION_WAYPOINT_MARKERS_SOURCE, buildMissionWaypointMarkersGeoJson(mission, pathClearedBeforeIndex(vehicleState), metersPerPx))
       setSourceData(map, MISSION_FLOATING_PATH_SOURCE, floatingPathGeoJson(mission, vehicleState, lappingLatchRef.current !== null, metersPerPx))
       setSourceData(map, MISSION_LOITER_RINGS_SOURCE, buildMissionLoiterRingsGeoJson(mission, pathClearedBeforeIndex(vehicleState), metersPerPx))
-      setSourceData(map, TRAIL_SOURCE, buildFloatingTrailGeoJson(trailRef.current, metersPerPx))
+      setSourceData(map, TRAIL_SOURCE, buildFloatingTrailGeoJson(trailRef.current, metersPerPx, Date.now()))
       setSourceData(map, AIRCRAFT_MARKER_SOURCE, aircraftGeoJson(map, vehicleState))
     })
 
@@ -700,12 +688,13 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
     aircraftMarkerRef.current.setLngLat([point.lon, point.lat]).setRotation(vehicleState.attitude.yawDeg)
     syncFlatAircraftVisibility(map, aircraftMarkerRef.current)
 
-    trailRef.current = appendTrailPoint(trailRef.current, { point, altM: vehicleState.position.altRelM })
+    const now = Date.now()
+    trailRef.current = appendTrailPoint(trailRef.current, { point, altM: vehicleState.position.altRelM, atMs: now }, MAX_TRAIL_POINTS, now)
     if (loadedRef.current) {
       ;(map.getSource(TRAIL_SOURCE) as GeoJSONSource | undefined)?.setData(
-        buildFloatingTrailGeoJson(trailRef.current, viewMetersPerPx(map)),
+        buildFloatingTrailGeoJson(trailRef.current, viewMetersPerPx(map), now),
       )
-      setSourceData(map, TRAIL_FLAT_SOURCE, buildTrailLineGeoJson(trailRef.current))
+      setSourceData(map, TRAIL_FLAT_SOURCE, buildTrailLineGeoJson(trailRef.current, now))
       ;(map.getSource(AIRCRAFT_MARKER_SOURCE) as GeoJSONSource | undefined)?.setData(aircraftGeoJson(map, vehicleState))
     }
   }, [vehicleState])

@@ -1,5 +1,5 @@
-import { fromLocalEastNorthM, haversineDistanceM } from './geo'
-import { itemPosition, type GeoPoint, type Mission } from './mission'
+import { bearingDeg, fromLocalEastNorthM, haversineDistanceM } from './geo'
+import { itemPosition, resolveLoiterUntilMs, type GeoPoint, type Mission } from './mission'
 
 /**
  * How the aircraft flies, for the planner's estimates. These are ArduPlane
@@ -79,6 +79,15 @@ function descentS(altM: number, perf: FlightPerformance): number {
   return (altM - finalM) / perf.vtolDescentMps + finalM / perf.landFinalMps
 }
 
+/** When the flight happens, so clock-mode loiters can be timed exactly, and
+ * how much of the first item's loiter is already flown. */
+export interface ProfileTiming {
+  /** The moment the profile starts from (epoch ms). */
+  nowMs: number
+  /** Laps already flown of the first item, when it's a loiter being circled. */
+  lapsDoneAtFirstItem?: number
+}
+
 /** Where the profile starts: home on the ground by default, or the aircraft
  * where it is now, for what's left of a mission in flight. */
 export interface ProfileStart {
@@ -105,6 +114,7 @@ export function buildMissionProfile(
   home: GeoPoint,
   perf: FlightPerformance = SITL_PERFORMANCE,
   from?: ProfileStart,
+  timing?: ProfileTiming,
 ): MissionProfile {
   const start = from ?? { point: home, altM: 0, fixedWing: false }
   const vertices: ProfileVertex[] = [{ distanceM: 0, altM: start.altM, point: start.point, itemIndex: null }]
@@ -159,11 +169,26 @@ export function buildMissionProfile(
     }
     flyTo(point, item.altM, i)
     if (item.type === 'loiter') {
-      const clockMode = item.untilUtcMinuteOfDay !== undefined
-      const lapsM = (clockMode ? 1 : (item.turns ?? 1)) * 2 * Math.PI * item.radiusM
-      flownM += lapsM
-      durationS += lapsM / perf.cruiseMps
-      durationIsMinimum ||= clockMode
+      const lapM = 2 * Math.PI * item.radiusM
+      const lapS = lapM / perf.cruiseMps
+      // Laps already flown count only for the first item, the one being circled.
+      const lapsDone = i === 0 ? (timing?.lapsDoneAtFirstItem ?? 0) : 0
+      let loiterS: number
+      if (item.untilUtcMinuteOfDay === undefined) {
+        loiterS = Math.max(0, (item.turns ?? 1) - lapsDone) * lapS
+      } else if (timing) {
+        // loiter_until.lua ends it at the time, after at least one lap.
+        const arriveMs = timing.nowMs + durationS * 1000
+        const untilMs = resolveLoiterUntilMs(arriveMs, item.untilUtcMinuteOfDay)
+        const minimumS = Math.max(0, 1 - lapsDone) * lapS
+        loiterS = Math.max(minimumS, (untilMs - arriveMs) / 1000)
+      } else {
+        // Planning, with no start time: only its guaranteed lap is known.
+        loiterS = lapS
+        durationIsMinimum = true
+      }
+      flownM += loiterS * perf.cruiseMps
+      durationS += loiterS
       loiters.push({ itemIndex: i, distanceM, center: point, radiusM: item.radiusM, altM: item.altM })
     }
   }
@@ -311,19 +336,21 @@ export interface MissionRemaining {
 
 /**
  * From the aircraft's position to the end of the mission, starting with the
- * item it's flying to. A loiter it's already circling counts its laps in
- * full, so near one the estimate runs a little long.
+ * item it's flying to. A loiter it's circling counts only the laps it has
+ * left (`timing.lapsDoneAtFirstItem`, from trackLoiterLaps), and clock-mode
+ * loiters run to their actual end time.
  */
 export function remainingMission(
   mission: Mission,
   currentIndex: number,
   aircraft: ProfileStart,
   home: GeoPoint,
+  timing: ProfileTiming,
   perf: FlightPerformance = SITL_PERFORMANCE,
 ): MissionRemaining | null {
   if (currentIndex < 0 || currentIndex >= mission.items.length) return null
   const rest = { ...mission, items: mission.items.slice(currentIndex) }
-  const profile = buildMissionProfile(rest, home, perf, aircraft)
+  const profile = buildMissionProfile(rest, home, perf, aircraft, timing)
   const first = profile.vertices[1]
   return {
     currentIndex,
@@ -344,5 +371,50 @@ export function returnHomeEstimate(
   const rtl: Mission = { id: 'rtl', name: 'rtl', createdAt: 0, updatedAt: 0, items: [{ type: 'returnToLaunch' }] }
   const profile = buildMissionProfile(rtl, home, perf, aircraft)
   return { distanceM: profile.routeDistanceM, durationS: profile.durationS }
+}
+
+/** Laps flown around the loiter currently being circled, counted from the
+ * angle swept around its centre (robust to wind, unlike timing laps). */
+export interface LoiterLapTracker {
+  missionId: string | null
+  itemIndex: number
+  /** Bearing from the centre to the aircraft last time, or null if not circling yet. */
+  lastBearingDeg: number | null
+  sweptDeg: number
+}
+
+export const NO_LOITER_LAPS: LoiterLapTracker = { missionId: null, itemIndex: -1, lastBearingDeg: null, sweptDeg: 0 }
+
+/** Counts as circling within this much of the loiter radius (the aircraft
+ * wanders a little either side of the circle, and doesn't start exactly on it). */
+const LOITER_CIRCLING_MARGIN_M = 40
+
+/**
+ * One telemetry update: if the aircraft is circling the loiter it's flying
+ * to, add the angle it has swept since last time. Starts again from zero
+ * for a new item or mission.
+ */
+export function trackLoiterLaps(
+  tracker: LoiterLapTracker,
+  mission: Mission | null,
+  currentIndex: number,
+  aircraft: GeoPoint,
+): LoiterLapTracker {
+  const item = mission?.items[currentIndex]
+  const same = tracker.missionId === (mission?.id ?? null) && tracker.itemIndex === currentIndex
+  const base = same ? tracker : { missionId: mission?.id ?? null, itemIndex: currentIndex, lastBearingDeg: null, sweptDeg: 0 }
+  if (item?.type !== 'loiter') return base
+  const center = { lat: item.lat, lon: item.lon }
+  if (haversineDistanceM(aircraft, center) > item.radiusM + LOITER_CIRCLING_MARGIN_M) return { ...base, lastBearingDeg: null }
+  const bearing = bearingDeg(center, aircraft)
+  if (base.lastBearingDeg === null) return { ...base, lastBearingDeg: bearing }
+  // The shorter way round: updates come several times a second, far less
+  // than half a lap apart.
+  const delta = ((bearing - base.lastBearingDeg + 540) % 360) - 180
+  return { ...base, lastBearingDeg: bearing, sweptDeg: base.sweptDeg + Math.abs(delta) }
+}
+
+export function loiterLapsDone(tracker: LoiterLapTracker): number {
+  return tracker.sweptDeg / 360
 }
 

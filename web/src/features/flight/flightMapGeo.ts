@@ -1,16 +1,33 @@
 import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson'
 import { alongTrackFraction, fromLocalEastNorthM, haversineDistanceM, itemPosition, type GeoPoint, type Mission } from '../../domain'
 
-export const MAX_TRAIL_POINTS = 500
+/** A safety cap; the trail is normally limited by age (TRAIL_LIFETIME_MS). */
+export const MAX_TRAIL_POINTS = 1000
+
+/** How long a piece of trail lasts: fully visible, then fading out over
+ * TRAIL_FADE_MS, gone at TRAIL_LIFETIME_MS. */
+export const TRAIL_LIFETIME_MS = 60_000
+export const TRAIL_FADE_MS = 20_000
 
 export interface AltitudePoint {
   point: GeoPoint
   altM: number
+  /** When it was recorded (epoch ms): trail points fade out by age. */
+  atMs?: number
 }
 
-export function appendTrailPoint(trail: AltitudePoint[], point: AltitudePoint, max = MAX_TRAIL_POINTS): AltitudePoint[] {
-  const next = [...trail, point]
+/** Adds a point; with `nowMs`, also drops points older than the lifetime. */
+export function appendTrailPoint(trail: AltitudePoint[], point: AltitudePoint, max = MAX_TRAIL_POINTS, nowMs?: number): AltitudePoint[] {
+  let next = [...trail, point]
+  if (nowMs !== undefined) next = next.filter((p) => p.atMs === undefined || nowMs - p.atMs < TRAIL_LIFETIME_MS)
   return next.length > max ? next.slice(next.length - max) : next
+}
+
+/** 1 while a trail point is young, easing to 0 as it expires; 1 without times. */
+export function trailFade(atMs: number | undefined, nowMs: number | undefined): number {
+  if (atMs === undefined || nowMs === undefined) return 1
+  const left = TRAIL_LIFETIME_MS - (nowMs - atMs)
+  return Math.min(1, Math.max(0, left / TRAIL_FADE_MS))
 }
 
 function metersToDegreesAt(lat: number, meters: number): { dLat: number; dLon: number } {
@@ -61,12 +78,11 @@ const TRAIL_TAIL_WIDTH = 0.1
  * trail points rather than interpolated along a prescribed line, since
  * telemetry is already sampled every tick.
  *
- * It fades out towards its oldest end, so dropping the oldest point each
- * update doesn't make the tail jump: each segment carries `fade` (0 at the
- * tail, 1 at the aircraft), which the layer maps to colour, and narrows
- * towards the tail. (A fill-extrusion layer's opacity can't vary per
- * feature, so the fade is colour and width.) */
-export function buildFloatingTrailGeoJson(trail: AltitudePoint[], metersPerPx = 0): FeatureCollection<Polygon> {
+ * Pieces of trail fade out as they expire (trailFade, by age, given
+ * `nowMs`): each segment carries `fade` (1 fresh, 0 expiring), which the
+ * layer maps to colour, and it narrows as it fades. (A fill-extrusion
+ * layer's opacity can't vary per feature, so the fade is colour and width.) */
+export function buildFloatingTrailGeoJson(trail: AltitudePoint[], metersPerPx = 0, nowMs?: number): FeatureCollection<Polygon> {
   const features: Feature<Polygon>[] = []
   const halfWidthM = atLeastPx(TRAIL_HALF_WIDTH_M, LINE_MIN_HALF_WIDTH_PX, metersPerPx)
 
@@ -81,7 +97,8 @@ export function buildFloatingTrailGeoJson(trail: AltitudePoint[], metersPerPx = 
     const len = Math.hypot(dLon, dLat)
     if (len === 0) continue
 
-    const fade = segments > 1 ? i / (segments - 1) : 1
+    const fade = trailFade(a.atMs, nowMs)
+    if (fade <= 0) continue
     const width = halfWidthM * (TRAIL_TAIL_WIDTH + (1 - TRAIL_TAIL_WIDTH) * fade)
     const { dLat: halfWidthLat, dLon: halfWidthLon } = metersToDegreesAt((a.point.lat + b.point.lat) / 2, width)
     const perpLon = (-dLat / len) * halfWidthLon
@@ -405,11 +422,25 @@ function lngLat(point: GeoPoint): [number, number] {
   return [point.lon, point.lat]
 }
 
-export function buildTrailLineGeoJson(trail: AltitudePoint[]): FeatureCollection<LineString> {
+/** The flat trail. With `nowMs`, segments that are expiring come out one by
+ * one with their `fade` (for line-opacity); the fresh part stays one line. */
+export function buildTrailLineGeoJson(trail: AltitudePoint[], nowMs?: number): FeatureCollection<LineString> {
   if (trail.length < 2) return featureCollection<LineString>([])
-  return featureCollection([
-    { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: trail.map((p) => lngLat(p.point)) } },
-  ])
+  const features: Feature<LineString>[] = []
+  const fresh: [number, number][] = []
+  for (let i = 0; i < trail.length - 1; i++) {
+    const a = trail[i]!
+    const b = trail[i + 1]!
+    const fade = trailFade(a.atMs, nowMs)
+    if (fade >= 1) {
+      if (fresh.length === 0) fresh.push(lngLat(a.point))
+      fresh.push(lngLat(b.point))
+    } else if (fade > 0) {
+      features.push({ type: 'Feature', properties: { fade }, geometry: { type: 'LineString', coordinates: [lngLat(a.point), lngLat(b.point)] } })
+    }
+  }
+  if (fresh.length > 1) features.push({ type: 'Feature', properties: { fade: 1 }, geometry: { type: 'LineString', coordinates: fresh } })
+  return featureCollection(features)
 }
 
 export function buildMissionWaypointPointsGeoJson(mission: Mission | null, clearedBeforeIndex?: number): FeatureCollection<Point> {

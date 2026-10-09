@@ -1,18 +1,25 @@
 import { House, MapPin, PlaneLanding, PlaneTakeoff, RotateCw, type LucideIcon } from 'lucide-react'
+import { useState } from 'react'
 import { useVehicleStore } from '../../app/store-hooks'
 import {
   haversineDistanceM,
   itemPosition,
+  loiterLapsDone,
   missionItemLabel,
+  NO_LOITER_LAPS,
   remainingMission,
   returnHomeEstimate,
+  trackLoiterLaps,
   type GeoPoint,
+  type LoiterLapTracker,
   type Mission,
   type MissionItem,
   type ProfileStart,
   type VehicleState,
 } from '../../domain'
+import { utcMinuteOfDayToLocalTime } from '../mission-planner/missionEdit'
 import { formatDistance, formatDuration } from '../mission-planner/profileFormat'
+import { useNow } from './useNow'
 
 type Phase = { label: string; color: string }
 
@@ -107,6 +114,22 @@ function legFraction(mission: Mission, index: number, toCurrentM: number, home: 
  */
 export function MissionProgressPanel({ mission }: { mission: Mission | null }) {
   const state = useVehicleStore((s) => s.vehicleState)
+  const now = useNow(1000)
+
+  // Laps flown of the loiter being circled, advanced once per telemetry
+  // update (adjusting state during render: it derives from the new state).
+  const [laps, setLaps] = useState<{ seen: VehicleState | null; tracker: LoiterLapTracker }>({ seen: null, tracker: NO_LOITER_LAPS })
+  if (state && state !== laps.seen) {
+    const sameMission = mission !== null && mission.items.length === state.missionProgress.total ? mission : null
+    setLaps({
+      seen: state,
+      tracker: trackLoiterLaps(laps.tracker, sameMission, state.missionProgress.currentIndex, {
+        lat: state.position.lat,
+        lon: state.position.lon,
+      }),
+    })
+  }
+
   if (!state?.armed) return null
 
   const home = state.home ? { lat: state.home.lat, lon: state.home.lon } : null
@@ -118,7 +141,13 @@ export function MissionProgressPanel({ mission }: { mission: Mission | null }) {
 
   const phase = mode === 'RTL' ? RETURNING : mode === 'QLAND' ? LANDING : mode === 'LOITER' || mode === 'QLOITER' ? PAUSED : FLYING
   const offMission = phase === RETURNING || phase === LANDING
-  const remaining = !offMission && known && home ? remainingMission(known, currentIndex, aircraft, home) : null
+  const lapsDone = loiterLapsDone(laps.tracker)
+  const circling = laps.tracker.lastBearingDeg !== null
+  const remaining =
+    !offMission && known && home
+      ? remainingMission(known, currentIndex, aircraft, home, { nowMs: now, lapsDoneAtFirstItem: lapsDone })
+      : null
+  const endsHome = known?.items.at(-1)?.type === 'returnToLaunch'
   const item = known?.items[currentIndex]
 
   // What it's flying to, and how far: home on RTL, the spot below on QLAND.
@@ -135,7 +164,13 @@ export function MissionProgressPanel({ mission }: { mission: Mission | null }) {
   } else if (item) {
     TargetIcon = ITEM_ICON[item.type]
     target = `${missionItemLabel(item)} ${currentIndex + 1}`
-    targetDetail = item.type === 'vtolTakeoff' ? `climbing to ${item.altM} m` : remaining ? formatDistance(remaining.toCurrentM) : ''
+    if (item.type === 'vtolTakeoff') targetDetail = `climbing to ${item.altM} m`
+    else if (item.type === 'loiter' && circling) {
+      targetDetail =
+        item.untilUtcMinuteOfDay !== undefined
+          ? `until ${utcMinuteOfDayToLocalTime(item.untilUtcMinuteOfDay)}`
+          : `lap ${Math.min(item.turns ?? 1, Math.floor(lapsDone) + 1)} of ${item.turns ?? 1}`
+    } else targetDetail = remaining ? formatDistance(remaining.toCurrentM) : ''
   }
 
   return (
@@ -172,16 +207,19 @@ export function MissionProgressPanel({ mission }: { mission: Mission | null }) {
 
       <div className="flex divide-x divide-border/60 border-t border-border/60">
         {!offMission && (
+          // Ends with RTL: this is when it'll be home, following the plan
+          // (laps left in loiters included). Ends with a landing elsewhere:
+          // when the mission's done.
           <Figure
-            label="Mission left"
+            label={endsHome ? 'Home in' : 'Mission left'}
             value={remaining ? `${remaining.isMinimum ? '≥ ' : ''}${formatDuration(remaining.remainingS)}` : '—'}
-            detail={remaining ? formatDistance(remaining.remainingM) : known ? '—' : 'not the vehicle’s mission'}
+            detail={remaining ? `${formatDistance(remaining.remainingM)} route` : known ? '—' : 'not the vehicle’s mission'}
           />
         )}
         <Figure
-          label="To home"
+          label={offMission ? 'Home in' : 'RTL now'}
           value={toHome ? formatDuration(toHome.durationS) : '—'}
-          detail={toHome ? formatDistance(toHome.distanceM) : 'home unknown'}
+          detail={toHome ? `${formatDistance(toHome.distanceM)} direct` : 'home unknown'}
         />
       </div>
     </section>

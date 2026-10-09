@@ -4,8 +4,11 @@ import type { Mission, MissionItem } from '../mission'
 import {
   buildMissionProfile,
   loiterRingPoints,
+  loiterLapsDone,
+  NO_LOITER_LAPS,
   remainingMission,
   returnHomeEstimate,
+  trackLoiterLaps,
   sampleProfile,
   SITL_PERFORMANCE as P,
   terrainClearance,
@@ -151,7 +154,7 @@ describe('in flight', () => {
 
   it('counts what is left from the aircraft, starting at the item it is flying to', () => {
     // Cruising, halfway to item 2 (1000 m north), heading for it.
-    const r = remainingMission(m, 2, { point: at(0, 1500), altM: 60, fixedWing: true }, HOME)!
+    const r = remainingMission(m, 2, { point: at(0, 1500), altM: 60, fixedWing: true }, HOME, { nowMs: 0 })!
     expect(to10(r.toCurrentM)).toBe(500)
     expect(to10(r.remainingM)).toBe(500 + 2000) // to item 2, then home
     // No transition: already fixed-wing.
@@ -160,14 +163,14 @@ describe('in flight', () => {
   })
 
   it('only climbs what is left of a takeoff', () => {
-    const r = remainingMission(m, 0, { point: HOME, altM: 30, fixedWing: false }, HOME)!
+    const r = remainingMission(m, 0, { point: HOME, altM: 30, fixedWing: false }, HOME, { nowMs: 0 })!
     expect(r.toCurrentM).toBe(0)
-    const fromGround = remainingMission(m, 0, { point: HOME, altM: 0, fixedWing: false }, HOME)!
+    const fromGround = remainingMission(m, 0, { point: HOME, altM: 0, fixedWing: false }, HOME, { nowMs: 0 })!
     expect(fromGround.remainingS - r.remainingS).toBeCloseTo(30 / P.vtolClimbMps)
   })
 
   it('has nothing for an index outside the mission', () => {
-    expect(remainingMission(m, 9, { point: HOME, altM: 0, fixedWing: false }, HOME)).toBeNull()
+    expect(remainingMission(m, 9, { point: HOME, altM: 0, fixedWing: false }, HOME, { nowMs: 0 })).toBeNull()
   })
 
   it('estimates the way home as RTL flies it', () => {
@@ -177,6 +180,50 @@ describe('in flight', () => {
       home.distanceM / P.cruiseMps + P.backTransitionS + (P.rtlAltM - P.landFinalAltM) / P.vtolDescentMps + P.landFinalAltM / P.landFinalMps,
       0,
     )
+  })
+})
+
+describe('loiters in flight', () => {
+  const lap = (radiusM: number) => (2 * Math.PI * radiusM) / P.cruiseMps
+  const centre = at(0, 1000)
+
+  it('counts only the laps left of the loiter being circled', () => {
+    const m = mission([{ type: 'loiter', ...centre, altM: 60, radiusM: 100, turns: 10 }, { type: 'returnToLaunch' }])
+    const onCircle = { point: at(100, 1000), altM: 60, fixedWing: true }
+    const fresh = remainingMission(m, 0, onCircle, HOME, { nowMs: 0, lapsDoneAtFirstItem: 0 })!
+    const sevenDone = remainingMission(m, 0, onCircle, HOME, { nowMs: 0, lapsDoneAtFirstItem: 7 })!
+    expect(fresh.remainingS - sevenDone.remainingS).toBeCloseTo(7 * lap(100), 0)
+    const allDone = remainingMission(m, 0, onCircle, HOME, { nowMs: 0, lapsDoneAtFirstItem: 12 })!
+    expect(fresh.remainingS - allDone.remainingS).toBeCloseTo(10 * lap(100), 0) // never negative laps
+  })
+
+  it('runs a clock-mode loiter to its end time, at least one lap', () => {
+    const until = 10 * 60 // 10:00 UTC
+    const m = mission([{ type: 'loiter', ...centre, altM: 60, radiusM: 100, untilUtcMinuteOfDay: until }, { type: 'returnToLaunch' }])
+    const onCircle = { point: at(100, 1000), altM: 60, fixedWing: true }
+    const nineThirty = Date.UTC(2026, 9, 9, 9, 30)
+    const half = remainingMission(m, 0, onCircle, HOME, { nowMs: nineThirty })!
+    const late = remainingMission(m, 0, onCircle, HOME, { nowMs: Date.UTC(2026, 9, 9, 10, 5) })!
+    expect(half.isMinimum).toBe(false)
+    // About 30 minutes of loitering more than when the time has already passed (one lap).
+    expect(half.remainingS - late.remainingS).toBeCloseTo(30 * 60 - lap(100), -1)
+  })
+
+  it('stays a minimum when planning, with no start time', () => {
+    const m = mission([{ type: 'loiter', ...centre, altM: 60, radiusM: 100, untilUtcMinuteOfDay: 600 }])
+    expect(buildMissionProfile(m, HOME).durationIsMinimum).toBe(true)
+  })
+
+  it('tracks laps from the angle swept around the centre, and resets for a new item', () => {
+    const m = mission([{ type: 'vtolTakeoff', altM: 40 }, { type: 'loiter', ...centre, altM: 60, radiusM: 100, turns: 5 }])
+    const onCircleAt = (deg: number) =>
+      fromLocalEastNorthM(centre, 100 * Math.sin((deg * Math.PI) / 180), 100 * Math.cos((deg * Math.PI) / 180))
+    let t = trackLoiterLaps(NO_LOITER_LAPS, m, 1, at(0, 0)) // far away: not circling
+    expect(t.lastBearingDeg).toBeNull()
+    for (let deg = 0; deg <= 540; deg += 30) t = trackLoiterLaps(t, m, 1, onCircleAt(deg))
+    expect(loiterLapsDone(t)).toBeCloseTo(1.5, 1)
+    t = trackLoiterLaps(t, m, 0, onCircleAt(0)) // a different item
+    expect(loiterLapsDone(t)).toBe(0)
   })
 })
 

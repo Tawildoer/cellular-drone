@@ -67,9 +67,11 @@ describe('MissionProgressPanel', () => {
     expect(screen.getByRole('img', { name: 'Item 3 of 4' })).toBeInTheDocument()
     expect(screen.getByText('Waypoint 3')).toBeInTheDocument()
     expect(screen.getByText(/^(499|500) m$/)).toBeInTheDocument()
-    expect(screen.getByText('Mission left')).toBeInTheDocument()
-    expect(screen.getByText('2.5 km')).toBeInTheDocument()
-    expect(screen.getByText('1.5 km')).toBeInTheDocument() // to home
+    // The mission ends with RTL, so following it is the way home.
+    expect(screen.getByText('Home in')).toBeInTheDocument()
+    expect(screen.getByText('2.5 km route')).toBeInTheDocument()
+    expect(screen.getByText('RTL now')).toBeInTheDocument()
+    expect(screen.getByText('1.5 km direct')).toBeInTheDocument()
   })
 
   it('says paused, and only shows the way home on RTL', () => {
@@ -78,8 +80,9 @@ describe('MissionProgressPanel', () => {
     unmount()
     renderWith(<MissionProgressPanel mission={mission} />, state({ flightMode: 'RTL' }))
     expect(screen.getByText('Returning home')).toBeInTheDocument()
-    expect(screen.queryByText('Mission left')).toBeNull()
-    expect(screen.getByText('To home')).toBeInTheDocument()
+    expect(screen.queryByText('RTL now')).toBeNull()
+    expect(screen.getByText('Home in')).toBeInTheDocument()
+    expect(screen.getByText('1.5 km direct')).toBeInTheDocument()
   })
 
   it('gives no estimate for a mission the vehicle is not flying, and hides on the ground', () => {

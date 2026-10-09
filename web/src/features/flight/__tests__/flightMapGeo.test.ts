@@ -19,12 +19,38 @@ import {
   metersPerPixel,
   missionBounds,
   MAX_TRAIL_POINTS,
+  TRAIL_FADE_MS,
+  TRAIL_LIFETIME_MS,
+  trailFade,
   type AltitudePoint,
 } from '../flightMapGeo'
 
 function altPoint(lat: number, lon: number, altM: number): AltitudePoint {
   return { point: { lat, lon }, altM }
 }
+
+describe('trail by age', () => {
+  const now = 1_000_000
+  const at = (ageS: number, lon: number) => ({ ...altPoint(0, lon, 50), atMs: now - ageS * 1000 })
+
+  it('is fully visible while young and fades to nothing as it expires', () => {
+    expect(trailFade(now - 10_000, now)).toBe(1)
+    expect(trailFade(now - (TRAIL_LIFETIME_MS - TRAIL_FADE_MS / 2), now)).toBeCloseTo(0.5)
+    expect(trailFade(now - TRAIL_LIFETIME_MS, now)).toBe(0)
+    expect(trailFade(undefined, now)).toBe(1)
+  })
+
+  it('drops expired points when appending', () => {
+    const trail = appendTrailPoint([at(70, 0), at(30, 0.001)], at(0, 0.002), MAX_TRAIL_POINTS, now)
+    expect(trail.map((p) => p.point.lon)).toEqual([0.001, 0.002])
+  })
+
+  it('keeps the fresh part of the flat trail as one line, and expiring segments separate', () => {
+    const lines = buildTrailLineGeoJson([at(50, 0), at(45, 0.001), at(10, 0.002), at(0, 0.003)], now).features
+    expect(lines.map((f) => f.properties?.fade)).toEqual([0.5, 0.75, 1])
+    expect(lines.at(-1)?.geometry.coordinates).toHaveLength(2)
+  })
+})
 
 describe('appendTrailPoint', () => {
   it('appends a point', () => {
@@ -49,15 +75,23 @@ describe('appendTrailPoint', () => {
 })
 
 describe('buildFloatingTrailGeoJson', () => {
-  it('fades from the oldest segment (0) to the newest (1), narrowing towards the tail', () => {
-    const trail = [0, 0.001, 0.002, 0.003].map((lon) => altPoint(0, lon, 50))
-    const features = buildFloatingTrailGeoJson(trail).features
-    expect(features.map((f) => f.properties?.fade)).toEqual([0, 0.5, 1])
+  it('fades expiring segments by age and drops expired ones, narrowing as they fade', () => {
+    const now = 1_000_000
+    const at = (ageS: number, lon: number) => ({ ...altPoint(0, lon, 50), atMs: now - ageS * 1000 })
+    // Ages 70 s (expired), 50 s (half faded), 10 s and 0 s (fresh).
+    const trail = [at(70, 0), at(50, 0.001), at(10, 0.002), at(0, 0.003)]
+    const features = buildFloatingTrailGeoJson(trail, 0, now).features
+    expect(features.map((f) => f.properties?.fade)).toEqual([0.5, 1])
     const widthOf = (i: number) => {
       const lats = features[i]?.geometry.coordinates[0]?.map((c) => c[1] ?? 0) ?? []
       return Math.max(...lats) - Math.min(...lats)
     }
-    expect(widthOf(0)).toBeLessThan(widthOf(2))
+    expect(widthOf(0)).toBeLessThan(widthOf(1))
+  })
+
+  it('draws at full strength without times', () => {
+    const trail = [altPoint(0, 0, 50), altPoint(0, 0.001, 50)]
+    expect(buildFloatingTrailGeoJson(trail).features[0]?.properties?.fade).toBe(1)
   })
 
   it('is empty with fewer than two points', () => {
