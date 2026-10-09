@@ -64,7 +64,7 @@ export function MenuDrawer() {
         aria-label={open ? 'Close menu' : 'Open menu'}
         aria-expanded={open}
         aria-controls="flight-menu"
-        className="glass-panel flex h-9 w-9 shrink-0 items-center justify-center transition hover:ring-2 hover:ring-primary"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition hover:bg-white/5 hover:ring-1 hover:ring-primary"
       >
         <Menu size={16} style={{ color: 'var(--primary)' }} aria-hidden />
       </button>

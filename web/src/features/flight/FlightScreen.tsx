@@ -78,37 +78,39 @@ export function FlightScreen({ onBack }: { onBack: () => void }) {
 
   return (
     <main className="relative h-svh w-full select-none overflow-hidden bg-background">
-      <div className="absolute inset-3 overflow-hidden rounded-[var(--panel-radius)] border border-border/60">
+      {/* The top bar: menu, the flight metrics in one compact row, and the
+          screen's actions. Docked to the top edge; the map starts below it. */}
+      <header className="absolute inset-x-0 top-0 z-30 flex h-11 items-center gap-2 border-b border-border/60 bg-background px-3">
+        {/* The menu (☰) holds what's looked at now and then: missions,
+            logs, link detail, simulator. The map keeps only what flying needs. */}
+        <MenuDrawer />
+        <HudStrip />
+        <span className="flex-1" />
+        <Button
+          type="button"
+          variant={planning ? 'default' : 'ghost'}
+          size="sm"
+          onClick={() => (planning ? setPlanning(false) : enterPlanning())}
+          className="shrink-0"
+        >
+          {planning ? 'Exit planning' : 'Plan mission'}
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={onBack} className="shrink-0">
+          Disconnect
+        </Button>
+      </header>
+
+      {/* Flush under the top bar (no gap), framed on the other three sides. */}
+      <div className="absolute inset-x-3 bottom-3 top-11 overflow-hidden rounded-b-[var(--panel-radius)] border border-t-0 border-border/60">
         <FlightPiP mission={mission} onMapClick={planning ? handleMapClick : undefined} focusMap={planning} />
       </div>
 
-      <div className="pointer-events-none absolute left-6 right-6 top-6 z-20 flex items-start justify-between gap-3">
+      <div className="pointer-events-none absolute left-6 right-6 top-[3.5rem] z-20 flex items-start justify-between gap-3">
         <div className="pointer-events-none flex flex-col items-start gap-2 [&>*]:pointer-events-auto">
           <TelemetryStaleBanner />
           <RcOverrideBanner />
           <FailsafeBanners />
-          {/* The menu (☰) holds what's looked at now and then: missions,
-              logs, link detail, simulator. The map keeps only what flying needs. */}
-          <div className="pointer-events-none flex items-start gap-2 [&>*]:pointer-events-auto">
-            <MenuDrawer />
-            <HudStrip />
-          </div>
           {planning ? <MissionListPanel /> : <MissionProgressPanel mission={mission} />}
-        </div>
-
-        <div className="pointer-events-none flex shrink-0 gap-2 [&>*]:pointer-events-auto">
-          <Button
-            type="button"
-            variant={planning ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => (planning ? setPlanning(false) : enterPlanning())}
-            className="glass-panel"
-          >
-            {planning ? 'Exit planning' : 'Plan mission'}
-          </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={onBack} className="glass-panel">
-            Disconnect
-          </Button>
         </div>
       </div>
 

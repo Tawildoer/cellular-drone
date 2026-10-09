@@ -12,9 +12,9 @@ import {
 } from './linkQuality'
 
 const WINDOW_MS = 10_000
-const WIDTH = 72
-const HEIGHT = 22
-const PAD = 3
+const WIDTH = 56
+const HEIGHT = 18
+const PAD = 2
 
 const x = (ageMs: number) => WIDTH - (ageMs / WINDOW_MS) * WIDTH
 const y = (score: number) => PAD + (1 - score) * (HEIGHT - 2 * PAD)
@@ -84,9 +84,9 @@ export function LinkStrengthTile() {
   const poorOffset = (poorY - PAD) / span
 
   return (
-    <div className="flex min-w-[96px] flex-col gap-0.5 rounded-lg border border-border/60 bg-card/40 px-2 py-1.5">
-      <span className="hud-label">Link · {WINDOW_MS / 1000} s</span>
-      <div className="flex items-end gap-2">
+    <div className="flex shrink-0 items-center gap-1 rounded-lg px-2" title={`Link strength, last ${WINDOW_MS / 1000} s`}>
+      <span className="hud-label text-[0.5625rem]">Link</span>
+      <div className="flex items-center gap-1.5">
         <svg width={WIDTH} height={HEIGHT} role="img" aria-label={summary(series)} className="block overflow-visible">
           <defs>
             <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1={0} x2={0} y1={PAD} y2={HEIGHT - PAD}>

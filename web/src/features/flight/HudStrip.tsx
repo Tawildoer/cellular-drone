@@ -11,7 +11,7 @@ export function HudStrip() {
 
   if (!vehicleState) {
     return (
-      <div className="glass-panel px-4 py-3">
+      <div className="flex items-center px-2.5">
         <span className="hud-label">Waiting for telemetry…</span>
       </div>
     )
@@ -21,26 +21,29 @@ export function HudStrip() {
   const link = formatLinkBadge(linkStatus)
 
   return (
-    <div className="glass-panel flex gap-1.5 overflow-x-auto px-2 py-2">
-      <StatTile label="Link" value={link.label} detail={link.detail} icon={Radio} status={link.status} />
+    // A single row in the top bar, metrics divided by hairlines.
+    <div className="flex min-w-0 items-center divide-x divide-border/60 overflow-x-auto">
+      <StatTile label="Link" value={link.label} detail={link.detail} icon={Radio} status={link.status} hideLabel />
       <LinkStrengthTile />
-      <StatTile label="Flight mode" value={vehicleState.flightMode} />
+      <StatTile label="Flight mode" shortLabel="Mode" value={vehicleState.flightMode} />
       <StatTile
         label="Armed"
         value={vehicleState.armed ? 'Armed' : 'Disarmed'}
         icon={vehicleState.armed ? ShieldAlert : ShieldCheck}
         status={vehicleState.armed ? 'warning' : undefined}
+        hideLabel
       />
-      <StatTile label="VTOL state" value={vtolStateLabel(vehicleState.vtolState)} />
-      <StatTile label="Altitude AGL" value={`${Math.round(vehicleState.position.altRelM)} m`} />
-      <StatTile label="Ground speed" value={`${vehicleState.groundSpeedMps.toFixed(1)} m/s`} />
-      <StatTile label="Heading" value={formatHeadingDeg(vehicleState.attitude.yawDeg)} />
+      <StatTile label="VTOL state" shortLabel="VTOL" value={vtolStateLabel(vehicleState.vtolState)} />
+      <StatTile label="Altitude AGL" shortLabel="Alt" value={`${Math.round(vehicleState.position.altRelM)} m`} />
+      <StatTile label="Ground speed" shortLabel="Spd" value={`${vehicleState.groundSpeedMps.toFixed(1)} m/s`} />
+      <StatTile label="Heading" shortLabel="Hdg" value={formatHeadingDeg(vehicleState.attitude.yawDeg)} />
       <StatTile
         label="Battery"
         value={`${Math.round(vehicleState.battery.percent)}%`}
         detail={`${vehicleState.battery.voltageV.toFixed(1)} V`}
         icon={BatteryIcon}
         status={batteryStatus(vehicleState.battery.percent)}
+        hideLabel
       />
       <StatTile
         label="GPS"
@@ -48,6 +51,7 @@ export function HudStrip() {
         detail={`${vehicleState.gps.satellites} sats`}
         icon={Satellite}
         status={gpsStatus(vehicleState.gps.fixType)}
+        hideLabel
       />
     </div>
   )

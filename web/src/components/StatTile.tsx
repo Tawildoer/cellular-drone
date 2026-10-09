@@ -10,21 +10,31 @@ export interface StatTileProps {
   icon?: LucideIcon
   /** Fixed status palette (good/warning/serious/critical). Never the only signal — label/value text should already say what's wrong. */
   status?: StatStatus
+  /** Shown instead of `label` where space is tight (e.g. "Alt"); `label`
+   * stays in the page for screen readers. */
+  shortLabel?: string
+  /** For values that explain themselves with their icon ("Armed", "98%"):
+   * no visible label, `label` kept for screen readers. */
+  hideLabel?: boolean
 }
 
-export function StatTile({ label, value, detail, icon: Icon, status }: StatTileProps) {
+export function StatTile({ label, value, detail, icon: Icon, status, shortLabel, hideLabel }: StatTileProps) {
   const statusColor = status ? `var(--status-${status})` : undefined
 
+  // One compact row for the top bar: [icon] LABEL value detail.
   return (
-    <div className="flex min-w-[72px] flex-col gap-0.5 rounded-lg border border-border/60 bg-card/40 px-2 py-1.5">
-      <div className="flex items-center gap-1.5">
-        {Icon && <Icon size={12} aria-hidden style={{ color: statusColor ?? 'var(--text-dim)' }} />}
-        <span className="hud-label">{label}</span>
-      </div>
-      <span className="hud-value" style={statusColor ? { color: statusColor, textShadow: 'none' } : undefined}>
+    <div className="flex shrink-0 items-center gap-1 rounded-lg px-2">
+      {Icon && <Icon size={12} aria-hidden className="shrink-0" style={{ color: statusColor ?? 'var(--text-dim)' }} />}
+      {hideLabel || shortLabel ? <span className="hud-label sr-only">{label}</span> : null}
+      {!hideLabel && (
+        <span className="hud-label text-[0.5625rem]" aria-hidden={shortLabel ? true : undefined}>
+          {shortLabel ?? label}
+        </span>
+      )}
+      <span className="hud-value whitespace-nowrap" style={statusColor ? { color: statusColor, textShadow: 'none' } : undefined}>
         {value}
       </span>
-      {detail && <span className="hud-label text-[0.625rem]">{detail}</span>}
+      {detail && <span className="hud-label whitespace-nowrap text-[0.5625rem]">{detail}</span>}
     </div>
   )
 }
