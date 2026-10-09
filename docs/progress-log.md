@@ -9,6 +9,7 @@ What each working session delivered, newest first. Commit hashes link to the cha
 - **Command bar feedback**: commands show "Sending…" then "accepted" or the reason they failed; hovering a disabled button says why (preflight items, "Arm first", "Already flying", "On the ground"). Start is now disabled in the air, as `mission.start` is a ground command.
 - **Progress panel redesign**: mission name with a state chip, one progress segment per item (the current one filling along its leg), the item being flown with its icon, and big figures for time and distance left and to home.
 - **Map**: flown-through waypoints stay on the map in green (their legs still disappear); the recenter button fits the whole mission, home and the drone in view, clear of the panels, where it used to drop to a fixed close zoom for any mission larger than a few kilometres.
+- **Docs on the domain**: https://drone.tomwildoer.com/docs/, built into the demo's Cloudflare deploy (ADR-0016 addendum); the demo redeployed with everything above.
 - **The repository is public** under Apache-2.0, with this site on GitHub Pages and private vulnerability reporting on. The GitHub repo was recreated so no pre-rewrite commit stays reachable.
 - **Fixed: the demo drone's route wasn't shown** (since 2026-10-06): the mock announced "connected" before loading its mission, so the app's download found nothing. Now loaded first, with a regression test.
 

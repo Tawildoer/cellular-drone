@@ -39,4 +39,4 @@ flowchart LR
 | Browser → agent → SITL e2e | `cd web && npm run e2e:sitl` |
 | This site | `pip install -r requirements-docs.txt && mkdocs serve` |
 
-Public mock demo: <https://drone.tomwildoer.com>.
+Public mock demo: <https://drone.tomwildoer.com>. These docs: <https://drone.tomwildoer.com/docs/> (rebuilt with each demo deploy, `npm run deploy` in `web/`), with a copy on GitHub Pages that rebuilds on every push.

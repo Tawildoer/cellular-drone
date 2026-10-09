@@ -2,7 +2,7 @@
 
 An autonomous fixed-wing **VTOL (ArduPilot ArduPlane QuadPlane)** supervised over **4G/LTE** from a browser. The whole mission lives on the flight controller; the browser plans it, watches live video and telemetry, and sends a small set of whitelisted commands. **No manual control goes over the network**: a local RC radio can always take over.
 
-**📖 [Docs](https://tawildoer.github.io/cellular-drone/)** · [Status](https://tawildoer.github.io/cellular-drone/status/) · [Progress log](https://tawildoer.github.io/cellular-drone/progress-log/) · [Live demo (mock drone)](https://drone.tomwildoer.com)
+**📖 [Docs](https://drone.tomwildoer.com/docs/)** · [Status](https://drone.tomwildoer.com/docs/status/) · [Progress log](https://drone.tomwildoer.com/docs/progress-log/) · [Live demo (mock drone)](https://drone.tomwildoer.com)
 
 ## What's here
 
