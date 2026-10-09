@@ -41,11 +41,11 @@ import { useFlightRecorder } from './useFlightRecorder'
  * a map click insert a waypoint, so it can't happen by accident mid-flight.
  */
 /** A bar over the map: only as wide as what it holds, flush to the edges. */
-const ISLAND = 'absolute z-30 flex items-center border-border/60 bg-background px-3'
+const ISLAND = 'glass-panel absolute z-30 flex items-center px-2'
 
 /** A button in the top bar, styled like the metrics' tiles. */
 const BAR_TILE =
-  'h-7 shrink-0 whitespace-nowrap rounded-lg bg-secondary px-3 text-xs font-medium text-[var(--foreground)] transition hover:bg-white/10'
+  'h-7 shrink-0 whitespace-nowrap rounded-lg bg-secondary px-2.5 text-xs font-medium text-[var(--foreground)] transition hover:bg-white/10'
 
 export function FlightScreen({ onBack }: { onBack: () => void }) {
   const [planning, setPlanning] = useState(false)
@@ -93,13 +93,13 @@ export function FlightScreen({ onBack }: { onBack: () => void }) {
 
       {/* Top-left: the menu (☰: missions, logs, link detail, simulator) and
           the flight metrics in one compact row. */}
-      <header className={`${ISLAND} left-0 top-0 h-11 max-w-[calc(100%-13.75rem)] gap-1.5 rounded-br-xl border-b border-r !px-2`}>
+      <header className={`${ISLAND} left-2 top-2 h-11 max-w-[calc(100%-14.5rem)] gap-1 !px-1.5`}>
         <MenuDrawer />
         <HudStrip />
       </header>
 
       {/* Top-right: the screen's actions. */}
-      <div className={`${ISLAND} right-0 top-0 h-11 gap-1.5 rounded-bl-xl border-b border-l`}>
+      <div className={`${ISLAND} right-2 top-2 h-11 gap-1.5`}>
         <button
           type="button"
           onClick={() => (planning ? setPlanning(false) : enterPlanning())}
@@ -113,12 +113,12 @@ export function FlightScreen({ onBack }: { onBack: () => void }) {
       </div>
 
       {/* Bottom-left: the commands, then the preflight check while it isn't ready. */}
-      <footer className={`${ISLAND} bottom-0 left-0 h-12 max-w-[calc(100%-13rem)] gap-1.5 rounded-tr-xl border-r border-t`}>
+      <footer className={`${ISLAND} bottom-2 left-2 h-12 max-w-[calc(100%-14rem)] gap-1.5`}>
         <CommandBar mission={mission} />
         <PreflightChecklist mission={mission} />
       </footer>
 
-      <div className="pointer-events-none absolute left-6 right-6 top-[3.5rem] z-20 flex items-start justify-between gap-3">
+      <div className="pointer-events-none absolute left-2 right-2 top-[3.75rem] z-20 flex items-start justify-between gap-3">
         <div className="pointer-events-none flex flex-col items-start gap-2 [&>*]:pointer-events-auto">
           <TelemetryStaleBanner />
           <RcOverrideBanner />
@@ -131,7 +131,7 @@ export function FlightScreen({ onBack }: { onBack: () => void }) {
           scrolling as a whole: the planner's panels stack up from the
           bottom and would otherwise climb over them on a short screen. */}
       {planning && draft && (
-        <div className="absolute bottom-[3.75rem] left-6 z-20 flex max-h-[calc(100svh-15rem)] max-w-xl flex-col gap-2 overflow-y-auto [&>*]:shrink-0">
+        <div className="absolute bottom-16 left-2 z-20 flex max-h-[calc(100svh-15rem)] max-w-xl flex-col gap-2 overflow-y-auto [&>*]:shrink-0">
           <MissionValidationPanel mission={draft} />
           <MissionProfilePanel mission={draft} onChangeItems={(items) => updateDraft({ items })} />
           {uploadError && (

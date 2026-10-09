@@ -26,7 +26,7 @@ export function HudStrip() {
     // link', 'QLOITER', '99.9 m/s', '2D fix 99 sats'), so nothing shifts as
     // values change. Re-measure if a label or format changes.
     // Slightly tighter letter spacing than the HUD default, to fit at 1280 px.
-    <div className="flex min-w-0 items-center gap-1 overflow-x-auto [&_.hud-label]:tracking-[0.06em] [&_.hud-value]:tracking-[0.03em]">
+    <div className="flex min-w-0 items-center gap-[3px] overflow-x-auto [&_.hud-label]:tracking-[0.06em] [&_.hud-value]:tracking-[0.03em]">
       <StatTile width={121} label="Link" value={link.label} detail={link.detail} icon={Radio} status={link.status} hideLabel />
       <LinkStrengthTile />
       <StatTile width={93} label="Flight mode" shortLabel="Mode" value={vehicleState.flightMode} />
