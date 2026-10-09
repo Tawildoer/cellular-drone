@@ -621,3 +621,32 @@ export function missionBounds(mission: Mission | null, home: GeoPoint | null, dr
     [Math.max(...lons), Math.max(...lats)],
   ]
 }
+
+/** An aircraft pose with when this browser received it (performance.now()). */
+export interface TimedPose extends AircraftPose {
+  atMs: number
+}
+
+/** Telemetry gaps outside this are clamped: a burst or a stall shouldn't make
+ * the motion race or freeze for long. */
+const POSE_GAP_MIN_MS = 40
+const POSE_GAP_MAX_MS = 1000
+
+/**
+ * Where to draw the aircraft between telemetry updates: part-way from the
+ * previous pose to the latest, by how much of the last update gap has passed
+ * since the latest arrived. That's one update (~100 ms) behind, and
+ * continuous: no stepping 10 times a second. Holds at the latest pose once
+ * the gap has passed rather than guessing ahead.
+ */
+export function interpolatePose(prev: TimedPose | null, latest: TimedPose, nowMs: number): AircraftPose {
+  if (!prev) return latest
+  const gap = Math.min(POSE_GAP_MAX_MS, Math.max(POSE_GAP_MIN_MS, latest.atMs - prev.atMs))
+  const f = Math.min(1, Math.max(0, (nowMs - latest.atMs) / gap))
+  const turn = ((latest.headingDeg - prev.headingDeg + 540) % 360) - 180
+  return {
+    point: { lat: lerp(prev.point.lat, latest.point.lat, f), lon: lerp(prev.point.lon, latest.point.lon, f) },
+    altM: lerp(prev.altM, latest.altM, f),
+    headingDeg: (prev.headingDeg + turn * f + 360) % 360,
+  }
+}

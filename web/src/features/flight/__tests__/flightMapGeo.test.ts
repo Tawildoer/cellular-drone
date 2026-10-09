@@ -5,6 +5,7 @@ import {
   AIRCRAFT_MARKER_MIN_PX,
   aircraftMarkerScale,
   appendTrailPoint,
+  interpolatePose,
   buildAircraftMarkerGeoJson,
   buildFenceGeoJson,
   buildFloatingTrailGeoJson,
@@ -690,5 +691,26 @@ describe('missionBounds', () => {
 
   it('is null with nothing to show', () => {
     expect(missionBounds(null, null, null)).toBeNull()
+  })
+})
+
+describe('interpolatePose', () => {
+  const pose = (lon: number, headingDeg: number, atMs: number) => ({ point: { lat: 0, lon }, altM: 50, headingDeg, atMs })
+
+  it('moves from the previous pose to the latest over one update gap', () => {
+    const prev = pose(0, 10, 0)
+    const latest = pose(0.001, 20, 100)
+    expect(interpolatePose(prev, latest, 100).point.lon).toBeCloseTo(0, 9)
+    expect(interpolatePose(prev, latest, 150).point.lon).toBeCloseTo(0.0005, 9)
+    expect(interpolatePose(prev, latest, 150).headingDeg).toBeCloseTo(15)
+    expect(interpolatePose(prev, latest, 400).point.lon).toBeCloseTo(0.001, 9) // holds, no guessing ahead
+  })
+
+  it('turns the short way across north', () => {
+    expect(interpolatePose(pose(0, 350, 0), pose(0, 10, 100), 150).headingDeg).toBeCloseTo(0)
+  })
+
+  it('draws the latest pose when there is no previous one', () => {
+    expect(interpolatePose(null, pose(0.002, 90, 0), 50).point.lon).toBe(0.002)
   })
 })

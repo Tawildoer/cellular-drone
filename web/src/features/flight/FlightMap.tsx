@@ -17,7 +17,9 @@ import type { GeoPoint, Mission, VehicleState } from '../../domain'
 import {
   aircraftMarkerScale,
   appendTrailPoint,
+  interpolatePose,
   MAX_TRAIL_POINTS,
+  type TimedPose,
   buildAircraftMarkerGeoJson,
   buildFenceGeoJson,
   buildFloatingTrailGeoJson,
@@ -342,7 +344,8 @@ function aircraftGeoJson(map: MaplibreMap, vehicleState: VehicleState | null) {
 }
 
 /** Follow-drone camera: a third-person chase view along the heading, 30°
- * above the horizon, or straight down (north up). */
+ * above the horizon, or straight down; both turned so the aircraft's
+ * heading is up the screen. */
 type FollowView = 'chase' | 'top'
 const FOLLOW_VIEW_KEY = 'cellular-drone:follow-view'
 /** MapLibre's pitch is measured from straight down: 60 is 30° above the horizon. */
@@ -350,9 +353,9 @@ const CHASE_PITCH = 60
 /** Zoom to fly in to when following starts from further out. */
 const FOLLOW_ZOOM = 16.5
 const FOLLOW_START_MS = 700
-/** How much of the way to the aircraft's heading the chase camera turns each
- * update: smooths the heading's wobble without lagging a real turn. */
-const CHASE_BEARING_SMOOTHING = 0.25
+/** The camera turns towards the aircraft's heading with this time constant
+ * (seconds): smooths the heading's wobble without lagging a real turn. */
+const FOLLOW_TURN_TAU_S = 0.35
 /** In chase view the aircraft sits this far down the screen (as top padding),
  * so more of what's ahead is in view. */
 const CHASE_TOP_PADDING = 0.35
@@ -367,12 +370,13 @@ function readFollowView(): FollowView {
   }
 }
 
-function followCamera(map: MaplibreMap, view: FollowView, state: VehicleState, smoothBearing: boolean) {
+/** Camera for the follow view. `blend` is how far to turn towards the
+ * heading this time: 1 snaps, a small value turns gradually frame by frame. */
+function followCamera(map: MaplibreMap, view: FollowView, headingDeg: number, blend: number) {
   const padding = { top: view === 'chase' ? map.getContainer().clientHeight * CHASE_TOP_PADDING : 0, bottom: 0, left: 0, right: 0 }
-  if (view === 'top') return { bearing: 0, pitch: 0, padding }
   const current = map.getBearing()
-  const turn = ((state.attitude.yawDeg - current + 540) % 360) - 180
-  return { bearing: smoothBearing ? current + turn * CHASE_BEARING_SMOOTHING : state.attitude.yawDeg, pitch: CHASE_PITCH, padding }
+  const turn = ((headingDeg - current + 540) % 360) - 180
+  return { bearing: current + turn * blend, pitch: view === 'chase' ? CHASE_PITCH : 0, padding }
 }
 
 export interface FlightMapProps {
@@ -397,6 +401,9 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
   const [followView, setFollowView] = useState<FollowView>(readFollowView)
   /** While following starts, its fly-in isn't cut short by telemetry updates. */
   const followSettlingRef = useRef(false)
+  const followingRef = useRef(false)
+  /** The last two telemetry poses, for drawing in between (interpolatePose). */
+  const posesRef = useRef<{ prev: TimedPose | null; latest: TimedPose | null }>({ prev: null, latest: null })
 
   const vehicleState = useVehicleStore((s) => s.vehicleState)
   const telemetryStale = useTelemetryStale()
@@ -743,7 +750,10 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
     aircraftMarkerRef.current ??= new Marker({ element: createAircraftElement(), rotationAlignment: 'map', pitchAlignment: 'map' })
       .setLngLat([point.lon, point.lat])
       .addTo(map)
-    aircraftMarkerRef.current.setLngLat([point.lon, point.lat]).setRotation(vehicleState.attitude.yawDeg)
+    const pose: TimedPose = { point, altM: vehicleState.position.altRelM, headingDeg: vehicleState.attitude.yawDeg, atMs: performance.now() }
+    posesRef.current = { prev: posesRef.current.latest, latest: pose }
+    // While following, the frame loop draws the aircraft between updates.
+    if (!followingRef.current) aircraftMarkerRef.current.setLngLat([point.lon, point.lat]).setRotation(vehicleState.attitude.yawDeg)
     syncFlatAircraftVisibility(map, aircraftMarkerRef.current)
 
     const now = Date.now()
@@ -753,7 +763,9 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
         buildFloatingTrailGeoJson(trailRef.current, viewMetersPerPx(map), now),
       )
       setSourceData(map, TRAIL_FLAT_SOURCE, buildTrailLineGeoJson(trailRef.current, now))
-      ;(map.getSource(AIRCRAFT_MARKER_SOURCE) as GeoJSONSource | undefined)?.setData(aircraftGeoJson(map, vehicleState))
+      if (!followingRef.current) {
+        ;(map.getSource(AIRCRAFT_MARKER_SOURCE) as GeoJSONSource | undefined)?.setData(aircraftGeoJson(map, vehicleState))
+      }
     }
   }, [vehicleState])
 
@@ -769,15 +781,32 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
     }
   }, [telemetryStale])
 
-  // Follow: keep the camera on the aircraft on every telemetry update.
+  // Follow: every screen frame, draw the aircraft part-way between its last
+  // two telemetry poses and put the camera on it. Telemetry comes 10 times a
+  // second; moving only then made the view step. One update behind, smooth.
   useEffect(() => {
+    followingRef.current = following
     const map = mapRef.current
-    if (!following || !map || !vehicleState || vehicleState.gps.fixType === 'none') return
-    if (followSettlingRef.current) return
-    // A jump per update (10 a second) reads as smooth motion; easing each one
-    // gets cut short by the next and leaves the camera trailing behind.
-    map.jumpTo({ center: [vehicleState.position.lon, vehicleState.position.lat], ...followCamera(map, followView, vehicleState, true) })
-  }, [following, followView, vehicleState])
+    if (!following || !map) return
+    let frame = 0
+    let lastFrameMs = performance.now()
+    const draw = (frameMs: number) => {
+      frame = requestAnimationFrame(draw)
+      const dtS = Math.min(0.25, (frameMs - lastFrameMs) / 1000)
+      lastFrameMs = frameMs
+      const { prev, latest } = posesRef.current
+      if (!latest || followSettlingRef.current) return
+      const pose = interpolatePose(prev, latest, performance.now())
+      const lngLat: [number, number] = [pose.point.lon, pose.point.lat]
+      aircraftMarkerRef.current?.setLngLat(lngLat).setRotation(pose.headingDeg)
+      if (loadedRef.current) {
+        setSourceData(map, AIRCRAFT_MARKER_SOURCE, buildAircraftMarkerGeoJson(pose, aircraftMarkerScale(map.getZoom(), pose.point.lat)))
+      }
+      map.jumpTo({ center: lngLat, ...followCamera(map, followView, pose.headingDeg, 1 - Math.exp(-dtS / FOLLOW_TURN_TAU_S)) })
+    }
+    frame = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(frame)
+  }, [following, followView])
 
   // Stopped following: give the view its centre back (chase view shifts it down).
   useEffect(() => {
@@ -799,7 +828,7 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
     setTimeout(() => (followSettlingRef.current = false), FOLLOW_START_MS)
     map.easeTo({
       center: [vehicleState.position.lon, vehicleState.position.lat],
-      ...followCamera(map, view, vehicleState, false),
+      ...followCamera(map, view, vehicleState.attitude.yawDeg, 1),
       zoom: Math.max(map.getZoom(), FOLLOW_ZOOM),
       duration: FOLLOW_START_MS,
     })
