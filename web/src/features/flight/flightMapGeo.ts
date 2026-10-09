@@ -1,5 +1,5 @@
 import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson'
-import { alongTrackFraction, fromLocalEastNorthM, haversineDistanceM, itemPosition, type GeoPoint, type Mission } from '../../domain'
+import { alongTrackFraction, bearingDeg, fromLocalEastNorthM, haversineDistanceM, itemPosition, type GeoPoint, type Mission } from '../../domain'
 
 /** A safety cap; the trail is normally limited by age (TRAIL_LIFETIME_MS). */
 export const MAX_TRAIL_POINTS = 1000
@@ -649,4 +649,20 @@ export function interpolatePose(prev: TimedPose | null, latest: TimedPose, nowMs
     altM: lerp(prev.altM, latest.altM, f),
     headingDeg: (prev.headingDeg + turn * f + 360) % 360,
   }
+}
+
+/**
+ * The direction actually flown over the last `windowMs` (ground track), from
+ * the oldest pose in the window to the newest: steadier than the nose
+ * heading, which wobbles from moment to moment. Null when it has moved less
+ * than `minDistanceM` (hovering, or not enough history), so the caller can
+ * fall back to the heading.
+ */
+export function trackBearingDeg(history: TimedPose[], windowMs: number, minDistanceM: number): number | null {
+  const latest = history.at(-1)
+  if (!latest) return null
+  const oldest = history.find((p) => latest.atMs - p.atMs <= windowMs)
+  if (!oldest || oldest === latest) return null
+  if (haversineDistanceM(oldest.point, latest.point) < minDistanceM) return null
+  return bearingDeg(oldest.point, latest.point)
 }

@@ -19,6 +19,7 @@ import {
   appendTrailPoint,
   interpolatePose,
   MAX_TRAIL_POINTS,
+  trackBearingDeg,
   type TimedPose,
   buildAircraftMarkerGeoJson,
   buildFenceGeoJson,
@@ -353,9 +354,14 @@ const CHASE_PITCH = 60
 /** Zoom to fly in to when following starts from further out. */
 const FOLLOW_ZOOM = 16.5
 const FOLLOW_START_MS = 700
-/** The camera turns towards the aircraft's heading with this time constant
- * (seconds): smooths the heading's wobble without lagging a real turn. */
-const FOLLOW_TURN_TAU_S = 0.35
+/** The camera turns towards the direction of travel with this time constant
+ * (seconds): a real turn comes through as a smooth swing, wobble doesn't. */
+const FOLLOW_TURN_TAU_S = 1.5
+/** The camera steers by the ground track over this window, which is far
+ * steadier than the nose heading; below this distance flown (hovering) it
+ * falls back to the heading. */
+const FOLLOW_TRACK_WINDOW_MS = 2000
+const FOLLOW_TRACK_MIN_M = 10
 /** In chase view the aircraft sits this far down the screen (as top padding),
  * so more of what's ahead is in view. */
 const CHASE_TOP_PADDING = 0.35
@@ -402,8 +408,13 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
   /** While following starts, its fly-in isn't cut short by telemetry updates. */
   const followSettlingRef = useRef(false)
   const followingRef = useRef(false)
-  /** The last two telemetry poses, for drawing in between (interpolatePose). */
-  const posesRef = useRef<{ prev: TimedPose | null; latest: TimedPose | null }>({ prev: null, latest: null })
+  /** The last two telemetry poses, for drawing in between (interpolatePose),
+   * and a couple of seconds of them for the camera's ground track. */
+  const posesRef = useRef<{ prev: TimedPose | null; latest: TimedPose | null; history: TimedPose[] }>({
+    prev: null,
+    latest: null,
+    history: [],
+  })
 
   const vehicleState = useVehicleStore((s) => s.vehicleState)
   const telemetryStale = useTelemetryStale()
@@ -751,7 +762,11 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       .setLngLat([point.lon, point.lat])
       .addTo(map)
     const pose: TimedPose = { point, altM: vehicleState.position.altRelM, headingDeg: vehicleState.attitude.yawDeg, atMs: performance.now() }
-    posesRef.current = { prev: posesRef.current.latest, latest: pose }
+    posesRef.current = {
+      prev: posesRef.current.latest,
+      latest: pose,
+      history: [...posesRef.current.history.filter((p) => pose.atMs - p.atMs <= FOLLOW_TRACK_WINDOW_MS), pose],
+    }
     // While following, the frame loop draws the aircraft between updates.
     if (!followingRef.current) aircraftMarkerRef.current.setLngLat([point.lon, point.lat]).setRotation(vehicleState.attitude.yawDeg)
     syncFlatAircraftVisibility(map, aircraftMarkerRef.current)
@@ -794,15 +809,16 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       frame = requestAnimationFrame(draw)
       const dtS = Math.min(0.25, (frameMs - lastFrameMs) / 1000)
       lastFrameMs = frameMs
-      const { prev, latest } = posesRef.current
+      const { prev, latest, history } = posesRef.current
       if (!latest || followSettlingRef.current) return
       const pose = interpolatePose(prev, latest, performance.now())
+      const cameraHeading = trackBearingDeg(history, FOLLOW_TRACK_WINDOW_MS, FOLLOW_TRACK_MIN_M) ?? pose.headingDeg
       const lngLat: [number, number] = [pose.point.lon, pose.point.lat]
       aircraftMarkerRef.current?.setLngLat(lngLat).setRotation(pose.headingDeg)
       if (loadedRef.current) {
         setSourceData(map, AIRCRAFT_MARKER_SOURCE, buildAircraftMarkerGeoJson(pose, aircraftMarkerScale(map.getZoom(), pose.point.lat)))
       }
-      map.jumpTo({ center: lngLat, ...followCamera(map, followView, pose.headingDeg, 1 - Math.exp(-dtS / FOLLOW_TURN_TAU_S)) })
+      map.jumpTo({ center: lngLat, ...followCamera(map, followView, cameraHeading, 1 - Math.exp(-dtS / FOLLOW_TURN_TAU_S)) })
     }
     frame = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(frame)

@@ -6,6 +6,7 @@ import {
   aircraftMarkerScale,
   appendTrailPoint,
   interpolatePose,
+  trackBearingDeg,
   buildAircraftMarkerGeoJson,
   buildFenceGeoJson,
   buildFloatingTrailGeoJson,
@@ -714,3 +715,29 @@ describe('interpolatePose', () => {
     expect(interpolatePose(null, pose(0.002, 90, 0), 50).point.lon).toBe(0.002)
   })
 })
+
+describe('trackBearingDeg', () => {
+  const at = (northM: number, eastM: number, atMs: number, headingDeg = 0) => ({
+    point: fromLocalEastNorthM({ lat: -37.861, lon: 145.062 }, eastM, northM),
+    altM: 50,
+    headingDeg,
+    atMs,
+  })
+
+  it('is the direction flown over the window, ignoring nose wobble', () => {
+    // Flying north-east while the nose swings ±20°.
+    const history = [0, 1, 2, 3, 4].map((i) => at(i * 20, i * 20, i * 500, 45 + (i % 2 ? 20 : -20)))
+    expect(trackBearingDeg(history, 2000, 10)).toBeCloseTo(45, 0)
+  })
+
+  it('only looks back as far as the window', () => {
+    const history = [at(0, -100, 0), at(0, 0, 5000), at(30, 0, 6000)] // old leg west→east, now north
+    expect(trackBearingDeg(history, 2000, 10)).toBeCloseTo(0, 0)
+  })
+
+  it('has nothing when barely moving, so the caller uses the heading', () => {
+    expect(trackBearingDeg([at(0, 0, 0), at(2, 0, 1000)], 2000, 10)).toBeNull()
+    expect(trackBearingDeg([], 2000, 10)).toBeNull()
+  })
+})
+
