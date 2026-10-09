@@ -21,8 +21,8 @@ export function HudStrip() {
   const link = formatLinkBadge(linkStatus)
 
   return (
-    // A single row in the top bar, metrics divided by hairlines.
-    <div className="flex min-w-0 items-center divide-x divide-border/60 overflow-x-auto">
+    // A single row in the top bar, each metric its own tile.
+    <div className="flex min-w-0 items-center gap-1 overflow-x-auto">
       <StatTile label="Link" value={link.label} detail={link.detail} icon={Radio} status={link.status} hideLabel />
       <LinkStrengthTile />
       <StatTile label="Flight mode" shortLabel="Mode" value={vehicleState.flightMode} />

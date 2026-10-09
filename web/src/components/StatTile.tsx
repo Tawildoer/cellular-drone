@@ -21,9 +21,10 @@ export interface StatTileProps {
 export function StatTile({ label, value, detail, icon: Icon, status, shortLabel, hideLabel }: StatTileProps) {
   const statusColor = status ? `var(--status-${status})` : undefined
 
-  // One compact row for the top bar: [icon] LABEL value detail.
+  // One compact island in the top bar: [icon] LABEL value detail, on a
+  // slightly lighter tile so each metric stands on its own.
   return (
-    <div className="flex shrink-0 items-center gap-1 rounded-lg px-2">
+    <div className="flex h-7 shrink-0 items-center gap-1 rounded-lg bg-secondary px-1.5">
       {Icon && <Icon size={12} aria-hidden className="shrink-0" style={{ color: statusColor ?? 'var(--text-dim)' }} />}
       {hideLabel || shortLabel ? <span className="hud-label sr-only">{label}</span> : null}
       {!hideLabel && (
