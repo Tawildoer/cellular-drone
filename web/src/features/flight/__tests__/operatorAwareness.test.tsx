@@ -60,25 +60,32 @@ function renderWith(ui: React.ReactNode, vehicleState: VehicleState | null, vehi
 }
 
 describe('MissionProgressPanel', () => {
-  it('shows the item being flown, what is left and the way home', () => {
+  it('shows the mission, the item being flown, and what is left and home', () => {
     renderWith(<MissionProgressPanel mission={mission} />, state())
-    expect(screen.getByText(/^3\/4 · Waypoint · (499|500) m$/)).toBeInTheDocument()
-    expect(screen.getByText(/^~\d+:\d\d · 2\.5 km$/)).toBeInTheDocument()
-    expect(screen.getByText(/^1\.5 km · ~\d+:\d\d$/)).toBeInTheDocument()
+    expect(screen.getByText('Flying')).toBeInTheDocument()
+    expect(screen.getByText('3 of 4')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Item 3 of 4' })).toBeInTheDocument()
+    expect(screen.getByText('Waypoint 3')).toBeInTheDocument()
+    expect(screen.getByText(/^(499|500) m$/)).toBeInTheDocument()
+    expect(screen.getByText('Mission left')).toBeInTheDocument()
+    expect(screen.getByText('2.5 km')).toBeInTheDocument()
+    expect(screen.getByText('1.5 km')).toBeInTheDocument() // to home
   })
 
-  it('says paused, and returning home on RTL', () => {
+  it('says paused, and only shows the way home on RTL', () => {
     const { unmount } = renderWith(<MissionProgressPanel mission={mission} />, state({ flightMode: 'LOITER' }))
     expect(screen.getByText('Paused')).toBeInTheDocument()
     unmount()
     renderWith(<MissionProgressPanel mission={mission} />, state({ flightMode: 'RTL' }))
     expect(screen.getByText('Returning home')).toBeInTheDocument()
+    expect(screen.queryByText('Mission left')).toBeNull()
+    expect(screen.getByText('To home')).toBeInTheDocument()
   })
 
   it('gives no estimate for a mission the vehicle is not flying, and hides on the ground', () => {
     const { unmount } = renderWith(<MissionProgressPanel mission={mission} />, state({ missionProgress: { currentIndex: 2, total: 9 } }))
-    expect(screen.getByText('3/9')).toBeInTheDocument()
-    expect(screen.queryByText('Left')).toBeNull()
+    expect(screen.getByText('3 of 9')).toBeInTheDocument()
+    expect(screen.getByText('not the vehicle’s mission')).toBeInTheDocument()
     unmount()
     const { container } = renderWith(<MissionProgressPanel mission={mission} />, state({ armed: false }))
     expect(container).toBeEmptyDOMElement()
