@@ -175,6 +175,15 @@ describe('vehicleStore adopting the vehicle mission', () => {
     expect(store.getState().missionOnVehicle).toEqual(flying)
   })
 
+  it("adopts the demo drone's mission: MockLink loads it before saying connected", async () => {
+    const link = new MockLink({ autoFly: { mission: flying } })
+    const store = createVehicleStore(link)
+    await store.getState().connect('demo')
+    await waitFor(() => store.getState().missionOnVehicle !== null)
+    expect(store.getState().missionOnVehicle?.id).toBe('already-flying')
+    await store.getState().disconnect()
+  })
+
   it('fetches it again after a reconnect', async () => {
     const link = new LateConnectingLink()
     const store = createVehicleStore(link)

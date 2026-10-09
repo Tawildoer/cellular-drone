@@ -5,6 +5,7 @@ import type { Feature, Polygon } from 'geojson'
 import { LocateFixed } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useVehicleStore } from '../../app/store-hooks'
+import { useTelemetryStale } from './telemetryAge'
 import type { GeoPoint, Mission, VehicleState } from '../../domain'
 import {
   aircraftMarkerScale,
@@ -349,6 +350,7 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
   const [basemap, setBasemap] = useState<'street' | 'satellite'>('street')
 
   const vehicleState = useVehicleStore((s) => s.vehicleState)
+  const telemetryStale = useTelemetryStale()
   // For map event handlers registered once at mount (the zoom resize below).
   const vehicleStateRef = useRef(vehicleState)
   useEffect(() => {
@@ -681,6 +683,18 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       ;(map.getSource(AIRCRAFT_MARKER_SOURCE) as GeoJSONSource | undefined)?.setData(aircraftGeoJson(map, vehicleState))
     }
   }, [vehicleState])
+
+  // Stale telemetry: the aircraft is drawn faded, so its position reads as
+  // "last known", not "here now" (StatusBanners says so in words).
+  useEffect(() => {
+    const opacity = telemetryStale ? 0.35 : 1
+    const marker = aircraftMarkerRef.current
+    if (marker) marker.getElement().style.opacity = String(opacity)
+    const map = mapRef.current
+    if (map && loadedRef.current && map.getLayer(AIRCRAFT_MARKER_SOURCE)) {
+      map.setPaintProperty(AIRCRAFT_MARKER_SOURCE, 'fill-extrusion-opacity', 0.95 * opacity)
+    }
+  }, [telemetryStale])
 
   function selectBasemap(next: 'street' | 'satellite') {
     const map = mapRef.current

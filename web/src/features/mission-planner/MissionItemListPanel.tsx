@@ -1,5 +1,5 @@
 import { Orbit, Trash2 } from 'lucide-react'
-import { itemPosition, MIN_LOITER_RADIUS_M, type Mission, type MissionItem } from '../../domain'
+import { itemPosition, MIN_LOITER_RADIUS_M, missionItemLabel, type Mission, type MissionItem } from '../../domain'
 import { Button } from '../../components/ui/button'
 import {
   defaultLoiterUntilUtcMinuteOfDay,
@@ -14,21 +14,6 @@ import {
   updateItemRadius,
   utcMinuteOfDayToLocalTime,
 } from './missionEdit'
-
-function itemTypeLabel(item: MissionItem): string {
-  switch (item.type) {
-    case 'vtolTakeoff':
-      return 'Takeoff'
-    case 'waypoint':
-      return 'Waypoint'
-    case 'loiter':
-      return 'Loiter'
-    case 'vtolLand':
-      return 'Land'
-    case 'returnToLaunch':
-      return 'Return to launch'
-  }
-}
 
 function hasAltitude(item: MissionItem): item is Extract<MissionItem, { altM: number }> {
   return item.type === 'vtolTakeoff' || item.type === 'waypoint' || item.type === 'loiter'
@@ -154,14 +139,14 @@ export function MissionItemListPanel({ mission, onChangeItems, onRename, onSave 
                 <li key={index} className="flex flex-col gap-1">
                   <div className="flex items-center gap-2">
                     <span className="hud-label w-5 shrink-0">{index + 1}</span>
-                    <span className="flex-1 text-xs">{itemTypeLabel(item)}</span>
+                    <span className="flex-1 text-xs">{missionItemLabel(item)}</span>
                     {hasAltitude(item) && (
                       <input
                         type="number"
                         value={item.altM}
                         onChange={(e) => onChangeItems(updateItemAltitude(items, index, Number(e.target.value)))}
                         className="w-14 rounded border border-border/60 bg-transparent px-1.5 py-0.5 text-right text-xs"
-                        aria-label={`${itemTypeLabel(item)} altitude, meters`}
+                        aria-label={`${missionItemLabel(item)} altitude, meters`}
                       />
                     )}
                     {canToggleLoiter && (

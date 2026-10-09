@@ -79,6 +79,15 @@ function descentS(altM: number, perf: FlightPerformance): number {
   return (altM - finalM) / perf.vtolDescentMps + finalM / perf.landFinalMps
 }
 
+/** Where the profile starts: home on the ground by default, or the aircraft
+ * where it is now, for what's left of a mission in flight. */
+export interface ProfileStart {
+  point: GeoPoint
+  altM: number
+  /** Already in fixed-wing flight, so no transition before the first leg. */
+  fixedWing: boolean
+}
+
 /**
  * The mission as ArduPlane flies it, side-on, with distance and time
  * estimates (docs/MAVLINK.md):
@@ -91,16 +100,22 @@ function descentS(altM: number, perf: FlightPerformance): number {
  * - RTL flies home at `RTL_ALTITUDE`, then lands vertically (`Q_RTL_MODE`).
  * Items after a landing or RTL are never flown and are left out.
  */
-export function buildMissionProfile(mission: Mission, home: GeoPoint, perf: FlightPerformance = SITL_PERFORMANCE): MissionProfile {
-  const vertices: ProfileVertex[] = [{ distanceM: 0, altM: 0, point: home, itemIndex: null }]
+export function buildMissionProfile(
+  mission: Mission,
+  home: GeoPoint,
+  perf: FlightPerformance = SITL_PERFORMANCE,
+  from?: ProfileStart,
+): MissionProfile {
+  const start = from ?? { point: home, altM: 0, fixedWing: false }
+  const vertices: ProfileVertex[] = [{ distanceM: 0, altM: start.altM, point: start.point, itemIndex: null }]
   const loiters: ProfileLoiter[] = []
-  let pos = home
+  let pos = start.point
   let distanceM = 0
   let flownM = 0
-  let altM = 0
+  let altM = start.altM
   let durationS = 0
   let durationIsMinimum = false
-  let fixedWing = false
+  let fixedWing = start.fixedWing
 
   function flyTo(point: GeoPoint, toAltM: number, itemIndex: number | null) {
     if (!fixedWing) {
@@ -125,7 +140,7 @@ export function buildMissionProfile(mission: Mission, home: GeoPoint, perf: Flig
 
   for (const [i, item] of mission.items.entries()) {
     if (item.type === 'vtolTakeoff') {
-      durationS += item.altM / perf.vtolClimbMps
+      durationS += Math.max(0, item.altM - altM) / perf.vtolClimbMps
       altM = item.altM
       vertices.push({ distanceM, altM, point: pos, itemIndex: i })
       continue
@@ -280,3 +295,54 @@ export function terrainClearance(
 
   return { samples: clearanceSamples, loiters: loiterClearances, lowest, incomplete }
 }
+
+/** What's left of a mission in flight, at the planner's ArduPlane figures. */
+export interface MissionRemaining {
+  /** The item being flown to (`missionProgress.currentIndex`). */
+  currentIndex: number
+  /** Straight-line distance to it; 0 for a takeoff (that's a climb). */
+  toCurrentM: number
+  /** Everything still to fly, loiter laps included. */
+  remainingM: number
+  remainingS: number
+  /** A clock-mode loiter is still ahead: the real time may be longer. */
+  isMinimum: boolean
+}
+
+/**
+ * From the aircraft's position to the end of the mission, starting with the
+ * item it's flying to. A loiter it's already circling counts its laps in
+ * full, so near one the estimate runs a little long.
+ */
+export function remainingMission(
+  mission: Mission,
+  currentIndex: number,
+  aircraft: ProfileStart,
+  home: GeoPoint,
+  perf: FlightPerformance = SITL_PERFORMANCE,
+): MissionRemaining | null {
+  if (currentIndex < 0 || currentIndex >= mission.items.length) return null
+  const rest = { ...mission, items: mission.items.slice(currentIndex) }
+  const profile = buildMissionProfile(rest, home, perf, aircraft)
+  const first = profile.vertices[1]
+  return {
+    currentIndex,
+    toCurrentM: first ? first.distanceM : 0,
+    remainingM: profile.flownDistanceM,
+    remainingS: profile.durationS,
+    isMinimum: profile.durationIsMinimum,
+  }
+}
+
+/** Straight home from where the aircraft is, as RTL flies it: at
+ * RTL_ALTITUDE, then a vertical landing. */
+export function returnHomeEstimate(
+  aircraft: ProfileStart,
+  home: GeoPoint,
+  perf: FlightPerformance = SITL_PERFORMANCE,
+): { distanceM: number; durationS: number } {
+  const rtl: Mission = { id: 'rtl', name: 'rtl', createdAt: 0, updatedAt: 0, items: [{ type: 'returnToLaunch' }] }
+  const profile = buildMissionProfile(rtl, home, perf, aircraft)
+  return { distanceM: profile.routeDistanceM, durationS: profile.durationS }
+}
+

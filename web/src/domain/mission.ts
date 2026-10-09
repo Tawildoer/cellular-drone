@@ -67,3 +67,20 @@ export function itemPosition(item: MissionItem): GeoPoint | null {
       return null
   }
 }
+
+/** The item's name in the UI, e.g. "Waypoint". */
+export function missionItemLabel(item: MissionItem): string {
+  switch (item.type) {
+    case 'vtolTakeoff':
+      return 'Takeoff'
+    case 'waypoint':
+      return 'Waypoint'
+    case 'loiter':
+      return 'Loiter'
+    case 'vtolLand':
+      return 'Land'
+    case 'returnToLaunch':
+      return 'Return to launch'
+  }
+}
+

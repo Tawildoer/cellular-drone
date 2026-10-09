@@ -2,6 +2,13 @@
 
 What each working session delivered, newest first. Commit hashes link to the change on GitHub. Add an entry when work lands; tick the matching boxes in [the plan](PLAN.md) in the same change.
 
+## 2026-10-09: operator awareness
+
+- **Flight progress panel**: the item being flown and how far it is (or the climb for a takeoff), time and distance left in the mission, and the way home, at the planner's ArduPlane figures. It only estimates for the mission the vehicle reports flying.
+- **Banners** for flight-controller failsafes (battery and geofence as alarms; RC loss as a warning, since in AUTO the mission continues) and for **stale telemetry**: after 3 s without an update the screen says it's showing the last known state, and the aircraft fades on the map. Telemetry age is timed by the browser's clock, so a drone clock that's off can't hide it.
+- **Command bar feedback**: commands show "Sending…" then "accepted" or the reason they failed; hovering a disabled button says why (preflight items, "Arm first", "Already flying", "On the ground"). Start is now disabled in the air, as `mission.start` is a ground command.
+- **Fixed: the demo drone's route wasn't shown** (since 2026-10-06): the mock announced "connected" before loading its mission, so the app's download found nothing. Now loaded first, with a regression test.
+
 ## 2026-10-08: SITL end to end, planner terrain tools, RC switch
 
 - **Browser → agent → ArduPlane SITL, flown end to end** ([`ea5180b`](https://github.com/Tawildoer/cellular-drone/commit/ea5180b)). SITL in Docker with the project's params and the two FC Lua scripts; the agent's MAVLink link, command whitelist, and mission/fence upload with readback. The Playwright SITL suite (`npm run e2e:sitl`) ran for the first time and passed.

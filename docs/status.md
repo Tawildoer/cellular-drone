@@ -1,6 +1,6 @@
 # Status
 
-*Last updated 2026-10-08.* The table below is counted from [the plan](PLAN.md)'s checkboxes every time the site builds, so it's always current. The rest of the page is a written summary: update it with the [progress log](progress-log.md).
+*Last updated 2026-10-09.* The table below is counted from [the plan](PLAN.md)'s checkboxes every time the site builds, so it's always current. The rest of the page is a written summary: update it with the [progress log](progress-log.md).
 
 ## Progress by phase
 
@@ -15,6 +15,8 @@ The software is ahead of the hardware, as planned. **Phase 1 runs end to end aga
 ### Done
 
 <span class="chip done">done</span> **Operator console** (1a): login, vehicle list, flight screen with 3D map, HUD, video, link quality, event log, RC override banner; mission planner with waypoints, loiters (laps or until a time of day), VTOL land or RTL ending, inline validation including the fence; preflight checklist gating arm; hold-to-confirm commands. Laptop layout.
+
+<span class="chip done">done</span> **Operator awareness**: flight progress with time left and the way home, failsafe and stale-telemetry banners, command feedback with reasons for disabled buttons.
 
 <span class="chip done">done</span> **Mission planning tools**: height profile over real terrain with clearance warnings, distance and time at ArduPlane's figures, and *Follow terrain at X m* (ADR-0021).
 

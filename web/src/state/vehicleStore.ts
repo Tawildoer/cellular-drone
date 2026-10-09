@@ -20,6 +20,9 @@ export type VehicleLinkResolver = (vehicleId: string) => VehicleLink
 export interface VehicleStoreState {
   connectionState: LinkState
   vehicleState: VehicleState | null
+  /** When this browser last received a VehicleState (epoch ms, the
+   * browser's own clock, so a drone clock that's off can't fake freshness). */
+  vehicleStateAt: number | null
   linkStatus: LinkStatus | null
   /** The last minute of link quality, one point per second. */
   linkHistory: LinkHistoryPoint[]
@@ -58,6 +61,7 @@ export function createVehicleStore(linkOrResolver: VehicleLink | VehicleLinkReso
   return createStore<VehicleStoreState>((set, get) => ({
     connectionState: 'disconnected',
     vehicleState: null,
+    vehicleStateAt: null,
     linkStatus: null,
     linkHistory: [],
     events: [],
@@ -85,7 +89,7 @@ export function createVehicleStore(linkOrResolver: VehicleLink | VehicleLinkReso
       }
 
       unsubscribers = [
-        link.onState((vehicleState) => set({ vehicleState })),
+        link.onState((vehicleState) => set({ vehicleState, vehicleStateAt: Date.now() })),
         link.onLinkStatus((linkStatus) => {
           const wasConnected = get().connectionState === 'connected'
           set((s) => ({
@@ -110,6 +114,7 @@ export function createVehicleStore(linkOrResolver: VehicleLink | VehicleLinkReso
       set({
         connectionState: 'disconnected',
         vehicleState: null,
+        vehicleStateAt: null,
         linkStatus: null,
         linkHistory: [],
         videoStream: null,

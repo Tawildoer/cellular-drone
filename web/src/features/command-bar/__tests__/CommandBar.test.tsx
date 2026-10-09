@@ -74,4 +74,29 @@ describe('CommandBar', () => {
 
     await vehicleStore.getState().disconnect()
   }, 10000)
+
+  it('says why a disabled button is disabled', async () => {
+    const vehicleStore = await renderWithStores(null)
+    await waitFor(() => expect(vehicleStore.getState().vehicleState).not.toBeNull())
+    const reasonOf = (name: RegExp) => screen.getByRole('button', { name }).closest('span[title]')?.getAttribute('title')
+    expect(reasonOf(/hold to arm/i)).toMatch(/^Preflight: .*Mission loaded/)
+    expect(reasonOf(/hold to start mission/i)).toBe('Arm first')
+    expect(reasonOf(/^pause$/i)).toMatch(/AUTO/)
+    expect(reasonOf(/hold for rtl/i)).toBe('On the ground')
+    await vehicleStore.getState().disconnect()
+  })
+
+  it('shows a command as pending, then accepted', async () => {
+    const vehicleStore = await renderWithStores(validMission)
+    await waitFor(() => expect(screen.getByRole('button', { name: /hold to arm/i })).toBeEnabled(), { timeout: 4000 })
+    // Slow the link so the pending state is visible before the result.
+    ;(vehicleStore.getState().activeLink as MockLink).setFaultConfig({ latencyMs: 300 })
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: /hold to arm/i }))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Sending Arm'), { timeout: 2000 })
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Arm accepted'), { timeout: 2000 })
+
+    await vehicleStore.getState().disconnect()
+  }, 10000)
 })
+

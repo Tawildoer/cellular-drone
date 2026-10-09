@@ -13,8 +13,10 @@ import { EventLogPopout } from './EventLogPopout'
 import { FlightPiP } from './FlightPiP'
 import { HudStrip } from './HudStrip'
 import { LinkQualityPopout } from './LinkQualityPopout'
+import { MissionProgressPanel } from './MissionProgressPanel'
 import { MissionSelector } from './MissionSelector'
 import { RcOverrideBanner } from './RcOverrideBanner'
+import { FailsafeBanners, TelemetryStaleBanner } from './StatusBanners'
 import { useFlightMission } from './useFlightMission'
 
 /**
@@ -80,12 +82,15 @@ export function FlightScreen({ onBack }: { onBack: () => void }) {
 
       <div className="pointer-events-none absolute left-6 right-6 top-6 z-20 flex items-start justify-between gap-3">
         <div className="pointer-events-auto flex flex-col items-start gap-2">
+          <TelemetryStaleBanner />
           <RcOverrideBanner />
+          <FailsafeBanners />
           <HudStrip />
           {planning ? (
             <MissionListPanel />
           ) : (
             <>
+              <MissionProgressPanel mission={mission} />
               <MissionSelector />
               <EventLogPopout />
               <LinkQualityPopout />

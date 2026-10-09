@@ -4,6 +4,8 @@ import type { Mission, MissionItem } from '../mission'
 import {
   buildMissionProfile,
   loiterRingPoints,
+  remainingMission,
+  returnHomeEstimate,
   sampleProfile,
   SITL_PERFORMANCE as P,
   terrainClearance,
@@ -138,3 +140,43 @@ describe('terrainClearance', () => {
     expect(result.samples[0]!.clearanceM).toBeNull()
   })
 })
+
+describe('in flight', () => {
+  const m = mission([
+    { type: 'vtolTakeoff', altM: 40 },
+    { type: 'waypoint', ...at(0, 1000), altM: 60 },
+    { type: 'waypoint', ...at(0, 2000), altM: 60 },
+    { type: 'returnToLaunch' },
+  ])
+
+  it('counts what is left from the aircraft, starting at the item it is flying to', () => {
+    // Cruising, halfway to item 2 (1000 m north), heading for it.
+    const r = remainingMission(m, 2, { point: at(0, 1500), altM: 60, fixedWing: true }, HOME)!
+    expect(to10(r.toCurrentM)).toBe(500)
+    expect(to10(r.remainingM)).toBe(500 + 2000) // to item 2, then home
+    // No transition: already fixed-wing.
+    expect(r.remainingS).toBeLessThan(2500 / P.cruiseMps + P.backTransitionS + 60)
+    expect(r.isMinimum).toBe(false)
+  })
+
+  it('only climbs what is left of a takeoff', () => {
+    const r = remainingMission(m, 0, { point: HOME, altM: 30, fixedWing: false }, HOME)!
+    expect(r.toCurrentM).toBe(0)
+    const fromGround = remainingMission(m, 0, { point: HOME, altM: 0, fixedWing: false }, HOME)!
+    expect(fromGround.remainingS - r.remainingS).toBeCloseTo(30 / P.vtolClimbMps)
+  })
+
+  it('has nothing for an index outside the mission', () => {
+    expect(remainingMission(m, 9, { point: HOME, altM: 0, fixedWing: false }, HOME)).toBeNull()
+  })
+
+  it('estimates the way home as RTL flies it', () => {
+    const home = returnHomeEstimate({ point: at(0, 2500), altM: 60, fixedWing: true }, HOME)
+    expect(to10(home.distanceM)).toBe(2500)
+    expect(home.durationS).toBeCloseTo(
+      home.distanceM / P.cruiseMps + P.backTransitionS + (P.rtlAltM - P.landFinalAltM) / P.vtolDescentMps + P.landFinalAltM / P.landFinalMps,
+      0,
+    )
+  })
+})
+

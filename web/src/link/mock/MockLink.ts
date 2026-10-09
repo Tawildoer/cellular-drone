@@ -63,6 +63,9 @@ export class MockLink implements VehicleLink {
     const fault = this.engine.getFaultConfig()
     await delay(fault.latencyMs)
 
+    // Before announcing "connected": the store downloads the vehicle's
+    // mission on that transition, so the demo's must already be loaded.
+    if (this.autoFly && !fault.linkDropped) this.runAutoFly(this.autoFly)
     this.setStatus({
       state: fault.linkDropped ? 'disconnected' : 'connected',
       path: 'direct',
@@ -70,7 +73,6 @@ export class MockLink implements VehicleLink {
       lastTelemetryAt: Date.now(),
     })
     this.startVideo()
-    if (this.autoFly && !fault.linkDropped) this.runAutoFly(this.autoFly)
     this.emitState()
     this.timer = setInterval(() => this.tick(), this.tickMs)
   }
