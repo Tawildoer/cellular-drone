@@ -1,5 +1,6 @@
 import { bearingDeg, fromLocalEastNorthM, haversineDistanceM } from './geo'
 import { itemPosition, resolveLoiterUntilMs, type GeoPoint, type Mission } from './mission'
+import { groundSpeedMps, type WindVector } from './weather'
 
 /**
  * How the aircraft flies, for the planner's estimates. These are ArduPlane
@@ -24,6 +25,10 @@ export interface FlightPerformance {
   backTransitionS: number
   /** `RTL_ALTITUDE`: the height ArduPlane flies home at (`sim/params`). */
   rtlAltM: number
+  /** Flight time on a full battery, for planning (ADR-0025). A placeholder
+   * matching the mock's drain (0.05 %/s) until the airframe's measured
+   * figure replaces it. */
+  enduranceS: number
 }
 
 export const SITL_PERFORMANCE: FlightPerformance = {
@@ -35,6 +40,7 @@ export const SITL_PERFORMANCE: FlightPerformance = {
   transitionS: 10,
   backTransitionS: 10,
   rtlAltM: 60,
+  enduranceS: 2000,
 }
 
 /** Below this height above the terrain the planner warns. Terrain data has
@@ -108,6 +114,8 @@ export interface ProfileStart {
  *   back-transitions and descends vertically.
  * - RTL flies home at `RTL_ALTITUDE`, then lands vertically (`Q_RTL_MODE`).
  * Items after a landing or RTL are never flown and are left out.
+ * - With a `wind` (one wind for the whole route), each leg and loiter lap is
+ *   timed at its ground speed: slower into the wind, faster with it.
  */
 export function buildMissionProfile(
   mission: Mission,
@@ -115,6 +123,7 @@ export function buildMissionProfile(
   perf: FlightPerformance = SITL_PERFORMANCE,
   from?: ProfileStart,
   timing?: ProfileTiming,
+  wind?: WindVector | null,
 ): MissionProfile {
   const start = from ?? { point: home, altM: 0, fixedWing: false }
   const vertices: ProfileVertex[] = [{ distanceM: 0, altM: start.altM, point: start.point, itemIndex: null }]
@@ -135,7 +144,7 @@ export function buildMissionProfile(
     const legM = haversineDistanceM(pos, point)
     distanceM += legM
     flownM += legM
-    durationS += legM / perf.cruiseMps
+    durationS += legM > 0 ? legM / groundSpeedMps(perf.cruiseMps, bearingDeg(pos, point), wind) : 0
     pos = point
     altM = toAltM
     vertices.push({ distanceM, altM, point, itemIndex })
@@ -169,8 +178,7 @@ export function buildMissionProfile(
     }
     flyTo(point, item.altM, i)
     if (item.type === 'loiter') {
-      const lapM = 2 * Math.PI * item.radiusM
-      const lapS = lapM / perf.cruiseMps
+      const lapS = loiterLapS(item.radiusM, perf.cruiseMps, wind)
       // Laps already flown count only for the first item, the one being circled.
       const lapsDone = i === 0 ? (timing?.lapsDoneAtFirstItem ?? 0) : 0
       let loiterS: number
@@ -202,6 +210,16 @@ export function buildMissionProfile(
     durationIsMinimum,
     maxAltM: Math.max(...vertices.map((v) => v.altM)),
   }
+}
+
+/** One lap of a loiter circle held over the ground: round the circle a
+ * sixteenth at a time, each at its ground speed in the wind. */
+function loiterLapS(radiusM: number, airspeedMps: number, wind: WindVector | null | undefined): number {
+  const steps = 16
+  const stepM = (2 * Math.PI * radiusM) / steps
+  let s = 0
+  for (let k = 0; k < steps; k++) s += stepM / groundSpeedMps(airspeedMps, ((k + 0.5) * 360) / steps, wind)
+  return s
 }
 
 /** A point along the route to look the terrain up at. */
@@ -347,10 +365,11 @@ export function remainingMission(
   home: GeoPoint,
   timing: ProfileTiming,
   perf: FlightPerformance = SITL_PERFORMANCE,
+  wind?: WindVector | null,
 ): MissionRemaining | null {
   if (currentIndex < 0 || currentIndex >= mission.items.length) return null
   const rest = { ...mission, items: mission.items.slice(currentIndex) }
-  const profile = buildMissionProfile(rest, home, perf, aircraft, timing)
+  const profile = buildMissionProfile(rest, home, perf, aircraft, timing, wind)
   const first = profile.vertices[1]
   return {
     currentIndex,
@@ -367,9 +386,10 @@ export function returnHomeEstimate(
   aircraft: ProfileStart,
   home: GeoPoint,
   perf: FlightPerformance = SITL_PERFORMANCE,
+  wind?: WindVector | null,
 ): { distanceM: number; durationS: number } {
   const rtl: Mission = { id: 'rtl', name: 'rtl', createdAt: 0, updatedAt: 0, items: [{ type: 'returnToLaunch' }] }
-  const profile = buildMissionProfile(rtl, home, perf, aircraft)
+  const profile = buildMissionProfile(rtl, home, perf, aircraft, undefined, wind)
   return { distanceM: profile.routeDistanceM, durationS: profile.durationS }
 }
 

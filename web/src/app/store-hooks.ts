@@ -12,7 +12,7 @@ import {
   type VehicleStore,
   type VehicleStoreState,
 } from '../state'
-import type { MissionTranslator, TerrainService } from '../services'
+import type { MissionTranslator, TerrainService, WeatherService } from '../services'
 import { ArduPilotMissionTranslator } from '../services/ardupilot'
 import { InMemoryFlightLogRepository } from '../services/mock'
 
@@ -38,6 +38,12 @@ export function useVehicleStore<T>(selector: (s: VehicleStoreState) => T): T {
   return useStore(useAppStores().vehicleStore, selector)
 }
 
+/** The vehicle store itself, for reading it in an event handler without
+ * re-rendering on every telemetry update. */
+export function useVehicleStoreApi(): VehicleStore {
+  return useAppStores().vehicleStore
+}
+
 export function useMissionStore<T>(selector: (s: MissionStoreState) => T): T {
   return useStore(useAppStores().missionStore, selector)
 }
@@ -55,6 +61,13 @@ export const TerrainServiceContext = createContext<TerrainService | null>(null)
 
 export function useTerrainService(): TerrainService | null {
   return useContext(TerrainServiceContext)
+}
+
+/** Provided from AppServices; null (no weather overlays) by default. */
+export const WeatherServiceContext = createContext<WeatherService | null>(null)
+
+export function useWeatherService(): WeatherService | null {
+  return useContext(WeatherServiceContext)
 }
 
 /** Provided from AppServices; the default keeps records in memory, so

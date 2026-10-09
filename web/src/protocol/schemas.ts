@@ -36,6 +36,7 @@ export const batterySchema = z.object({
   voltageV: z.number(),
   currentA: z.number(),
   percent: z.number(),
+  toHomePercent: z.number().optional(),
 })
 
 export const gpsStatusSchema = z.object({
@@ -62,6 +63,25 @@ export const failsafeFlagsSchema = z.object({
   rc: z.boolean(),
 })
 
+export const gimbalTargetSchema = z.object({
+  lat: z.number(),
+  lon: z.number(),
+  altAmslM: z.number(),
+})
+
+export const gimbalAttitudeSchema = z.object({
+  pitchDeg: z.number(),
+  yawDeg: z.number(),
+  lock: gimbalTargetSchema.optional(),
+  lookAt: gimbalTargetSchema.optional(),
+})
+
+export const freeFlyStateSchema = z.object({
+  altM: z.number(),
+  waypoints: z.array(z.object({ lat: z.number(), lon: z.number(), loiterRadiusM: z.number().optional() })),
+  circling: z.boolean(),
+})
+
 export const homePositionSchema = z.object({
   lat: z.number(),
   lon: z.number(),
@@ -85,6 +105,9 @@ export const vehicleStateSchema = z.object({
   missionProgress: missionProgressSchema,
   rc: rcStatusSchema,
   failsafe: failsafeFlagsSchema,
+  gimbal: gimbalAttitudeSchema.optional(),
+  freeFly: freeFlyStateSchema.optional(),
+  wind: z.object({ speedMps: z.number(), fromDeg: z.number() }).optional(),
   updatedAt: z.number(),
 })
 
@@ -158,6 +181,17 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('mode.rtl') }),
   z.object({ type: z.literal('mode.qland') }),
   z.object({ type: z.literal('video.config'), preset: z.enum(['low', 'medium', 'high']) }),
+  z.object({ type: z.literal('gimbal.lock'), target: gimbalTargetSchema }),
+  z.object({ type: z.literal('gimbal.release') }),
+  z.object({ type: z.literal('freefly.start'), altM: z.number() }),
+  z.object({ type: z.literal('freefly.waypoint'), lat: z.number(), lon: z.number() }),
+  z.object({ type: z.literal('freefly.remove'), index: z.number().int(), at: z.object({ lat: z.number(), lon: z.number() }) }),
+  z.object({
+    type: z.literal('freefly.loiter'),
+    index: z.number().int(),
+    at: z.object({ lat: z.number(), lon: z.number() }),
+    loiter: z.boolean(),
+  }),
 ])
 
 export const commandResultSchema = z.discriminatedUnion('ok', [

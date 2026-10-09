@@ -1,5 +1,16 @@
 import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson'
-import { alongTrackFraction, bearingDeg, fromLocalEastNorthM, haversineDistanceM, itemPosition, type GeoPoint, type Mission } from '../../domain'
+import {
+  alongTrackFraction,
+  bearingDeg,
+  fromLocalEastNorthM,
+  haversineDistanceM,
+  itemPosition,
+  legWindTint,
+  type GimbalAttitude,
+  type GeoPoint,
+  type Mission,
+  type WindVector,
+} from '../../domain'
 
 /** A safety cap; the trail is normally limited by age (TRAIL_LIFETIME_MS). */
 export const MAX_TRAIL_POINTS = 1000
@@ -244,13 +255,17 @@ const FLOATING_PATH_MAX_DASHES_PER_LEG = 500
  * along it — each dash behind the aircraft's along-track projection (the
  * point on the leg perpendicular to its position, same projection L1
  * guidance uses) is dropped, so the path trails away in real time instead of
- * vanishing all at once only once the waypoint is finally reached. */
+ * vanishing all at once only once the waypoint is finally reached.
+ *
+ * `wind`, when given, tags each dash with its leg's `windTint` (headwind or
+ * tailwind, ADR-0026) for the path's colour. */
 export function buildMissionFloatingPathGeoJson(
   mission: Mission | null,
   fromPoint?: AltitudePoint,
   clearedBeforeIndex?: number,
   dronePosition?: GeoPoint,
   metersPerPx = 0,
+  wind?: WindVector | null,
 ): FeatureCollection<Polygon> {
   const missionPoints = missionAltitudePoints(mission)
   const altPoints: IndexedAltitudePoint[] =
@@ -273,6 +288,7 @@ export function buildMissionFloatingPathGeoJson(
     const behindFraction = isCurrentLeg && dronePosition ? alongTrackFraction(dronePosition, a.point, b.point) : 0
 
     const dashCount = Math.min(FLOATING_PATH_MAX_DASHES_PER_LEG, Math.max(1, Math.floor(legLengthM / periodM)))
+    const windTint = legWindTint(bearingDeg(a.point, b.point), wind)
 
     for (let d = 0; d < dashCount; d++) {
       const startM = d * periodM
@@ -307,6 +323,7 @@ export function buildMissionFloatingPathGeoJson(
         properties: {
           base: Math.max(0, altMid - FLOATING_PATH_HALF_THICKNESS_M),
           top: altMid + FLOATING_PATH_HALF_THICKNESS_M,
+          windTint,
         },
         geometry: { type: 'Polygon', coordinates: [ring] },
       })
@@ -464,6 +481,7 @@ export function buildMissionPathLinesGeoJson(
   fromPoint?: AltitudePoint,
   clearedBeforeIndex?: number,
   dronePosition?: GeoPoint,
+  wind?: WindVector | null,
 ): FeatureCollection<LineString> {
   const missionPoints = missionAltitudePoints(mission)
   const points: IndexedAltitudePoint[] =
@@ -480,7 +498,11 @@ export function buildMissionPathLinesGeoJson(
     const behind = isCurrentLeg && dronePosition ? Math.max(0, alongTrackFraction(dronePosition, a.point, b.point)) : 0
     if (behind >= 1) continue
     const start: GeoPoint = { lat: lerp(a.point.lat, b.point.lat, behind), lon: lerp(a.point.lon, b.point.lon, behind) }
-    features.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [lngLat(start), lngLat(b.point)] } })
+    features.push({
+      type: 'Feature',
+      properties: { windTint: legWindTint(bearingDeg(a.point, b.point), wind) },
+      geometry: { type: 'LineString', coordinates: [lngLat(start), lngLat(b.point)] },
+    })
   }
   return featureCollection(features)
 }
@@ -571,6 +593,100 @@ export function buildAircraftMarkerGeoJson(pose: AircraftPose | null, scale = 1)
   }
 }
 
+/** Ground reach beyond which a near-level gimbal's ray stops short instead
+ * of running to a far horizon. */
+const GIMBAL_RAY_MAX_REACH_M = 2000
+/** Ray marching: steps along the ground, then halving to pin the hit. */
+const GIMBAL_RAY_MIN_STEP_M = 1
+const GIMBAL_RAY_MAX_STEP_M = 20
+const GIMBAL_RAY_REFINE_STEPS = 10
+/** Steeper than this is straight down: no marching needed. */
+const GIMBAL_RAY_VERTICAL_DIP_DEG = 89.9
+
+export interface GimbalRay {
+  /** Where the ray ends: on the ground at the gimbal's focus, or short of it. */
+  end: GeoPoint
+  /** Heights in the ground model's frame (above sea level with terrain). */
+  startHeightM: number
+  endHeightM: number
+  /** Whether it reached the ground (false: cut off at max reach). */
+  hitsGround: boolean
+}
+
+/**
+ * Where the gimbal is looking: the ray from the aircraft along its heading
+ * plus the gimbal's yaw, dipping at the gimbal's pitch, to where it first
+ * meets the ground. `groundAt` gives the ground's height at a point (the
+ * map's terrain); without it the ground is flat at 0. The aircraft sits
+ * `pose.altM` above the ground under it, as the map draws it. Pointed at a
+ * spot (a lock, ADR-0023, or a loiter's centre), the ray ends on that spot:
+ * it's where the vehicle says the camera is looking, and the line shouldn't drift off it as the aircraft's
+ * drawn height and the terrain disagree slightly. Null on the ground, with
+ * no gimbal, or looking level or up.
+ */
+export function gimbalRay(
+  pose: AircraftPose | null,
+  gimbal: GimbalAttitude | undefined,
+  groundAt: (point: GeoPoint) => number = () => 0,
+): GimbalRay | null {
+  if (!pose || !gimbal || pose.altM <= 0.5) return null
+  const startHeightM = groundAt(pose.point) + pose.altM
+  const spot = gimbal.lookAt ?? gimbal.lock
+  if (spot) {
+    const end = { lat: spot.lat, lon: spot.lon }
+    return { end, startHeightM, endHeightM: groundAt(end), hitsGround: true }
+  }
+  const dipDeg = Math.min(90, -gimbal.pitchDeg)
+  if (dipDeg <= 0.5) return null
+  if (dipDeg >= GIMBAL_RAY_VERTICAL_DIP_DEG) {
+    return { end: pose.point, startHeightM, endHeightM: groundAt(pose.point), hitsGround: true }
+  }
+
+  const rad = ((pose.headingDeg + gimbal.yawDeg) * Math.PI) / 180
+  const pointAt = (reachM: number) => fromLocalEastNorthM(pose.point, Math.sin(rad) * reachM, Math.cos(rad) * reachM)
+  const tanDip = Math.tan((dipDeg * Math.PI) / 180)
+  const heightAt = (reachM: number) => startHeightM - reachM * tanDip
+  const above = (reachM: number) => heightAt(reachM) - groundAt(pointAt(reachM))
+
+  // Step out until the ray is at or below the ground, then halve the last
+  // step. The step scales with where flat ground would be hit.
+  const step = Math.min(GIMBAL_RAY_MAX_STEP_M, Math.max(GIMBAL_RAY_MIN_STEP_M, pose.altM / tanDip / 40))
+  let near = 0
+  let far = -1
+  for (let s = step; s <= GIMBAL_RAY_MAX_REACH_M + step / 2; s += step) {
+    const reach = Math.min(s, GIMBAL_RAY_MAX_REACH_M)
+    if (above(reach) <= 0) {
+      far = reach
+      break
+    }
+    near = reach
+  }
+  if (far < 0) {
+    const end = pointAt(GIMBAL_RAY_MAX_REACH_M)
+    return { end, startHeightM, endHeightM: heightAt(GIMBAL_RAY_MAX_REACH_M), hitsGround: false }
+  }
+  for (let i = 0; i < GIMBAL_RAY_REFINE_STEPS; i++) {
+    const mid = (near + far) / 2
+    if (above(mid) <= 0) far = mid
+    else near = mid
+  }
+  const end = pointAt(far)
+  return { end, startHeightM, endHeightM: groundAt(end), hitsGround: true }
+}
+
+/** The spot the gimbal is locked onto, if any (ADR-0023). */
+export function buildGimbalLockGeoJson(gimbal: GimbalAttitude | undefined): FeatureCollection<Point> {
+  const lock = gimbal?.lock
+  if (!lock) return featureCollection([])
+  return featureCollection([{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [lock.lon, lock.lat] } }])
+}
+
+/** The zoomed-out stand-in: a flat line from the aircraft to the focus. */
+export function buildGimbalRayLineGeoJson(pose: AircraftPose | null, ray: GimbalRay | null): FeatureCollection<LineString> {
+  if (!pose || !ray) return featureCollection([])
+  return featureCollection([{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [lngLat(pose.point), lngLat(ray.end)] } }])
+}
+
 export function buildFenceGeoJson(mission: Mission | null): Feature<Polygon> | null {
   const polygon = mission?.fence?.polygon
   if (!polygon || polygon.length < 3) return null
@@ -597,11 +713,20 @@ export type LngLatBoundsLike = [[number, number], [number, number]]
 /**
  * The box around everything the operator needs in view: every item with a
  * position (to the outer edge of each loiter circle), home and the drone.
- * Null when there's nothing to show.
+ * From `fromIndex`, only the items still to fly: home then counts only if
+ * one of them goes there (a takeoff or return to launch). Null when there's
+ * nothing to show.
  */
-export function missionBounds(mission: Mission | null, home: GeoPoint | null, drone: GeoPoint | null): LngLatBoundsLike | null {
+export function missionBounds(
+  mission: Mission | null,
+  home: GeoPoint | null,
+  drone: GeoPoint | null,
+  fromIndex = 0,
+): LngLatBoundsLike | null {
+  const items = mission?.items.slice(fromIndex) ?? []
+  const visitsHome = fromIndex === 0 || items.some((item) => item.type === 'returnToLaunch' || item.type === 'vtolTakeoff')
   const points: GeoPoint[] = []
-  for (const item of mission?.items ?? []) {
+  for (const item of items) {
     const point = itemPosition(item)
     if (!point) continue
     if (item.type === 'loiter') {
@@ -611,7 +736,7 @@ export function missionBounds(mission: Mission | null, home: GeoPoint | null, dr
       points.push(point)
     }
   }
-  if (home) points.push(home)
+  if (home && visitsHome) points.push(home)
   if (drone) points.push(drone)
   if (points.length === 0) return null
   const lons = points.map((p) => p.lon)

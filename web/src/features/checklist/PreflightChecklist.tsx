@@ -11,7 +11,7 @@ export function PreflightChecklist({ mission }: { mission: Mission | null }) {
 
   if (!vehicleState) {
     return (
-      <div className="flex h-8 shrink-0 items-center rounded-lg bg-secondary px-3">
+      <div className="flex h-8 shrink-0 items-center rounded-lg bg-secondary glass-tile px-3">
         <span className="hud-label">Preflight — waiting for telemetry…</span>
       </div>
     )
@@ -24,7 +24,7 @@ export function PreflightChecklist({ mission }: { mission: Mission | null }) {
 
   return (
     <div
-      className="flex h-8 min-w-0 shrink items-center gap-2 overflow-hidden rounded-lg bg-secondary px-3"
+      className="flex h-8 min-w-0 shrink items-center gap-2 overflow-hidden rounded-lg bg-secondary glass-tile px-3"
       title={failedItems.map((item) => item.label).join('\n')}
     >
       <span className="hud-label shrink-0" style={{ color: 'var(--status-warning)' }}>

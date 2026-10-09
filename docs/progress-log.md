@@ -2,6 +2,18 @@
 
 What each working session delivered, newest first. Commit hashes link to the change on GitHub. Add an entry when work lands; tick the matching boxes in [the plan](PLAN.md) in the same change.
 
+## 2026-10-10: gimbal, free fly, battery and weather
+
+All in the console and the mock drone; the agent rejects the new commands until it implements them, and the battery-return FC script is still to write and prove in SITL.
+
+- **Gimbal line of sight** (ADR-0023): a faint black line from the aircraft to where the camera points, landing on the terrain. **Click the map to lock the gimbal** onto a spot within 500 m (ring on the map, *Gimbal locked · Release* chip); it releases by itself past 500 m. While circling a loiter the camera watches its centre (ADR-0024).
+- **Free fly** (ADR-0024): hold to take over an airborne drone; double-click the map to add waypoints at 60 m, flown as a rolling AUTO mission held on the FC; it circles the last one until given another. Click a waypoint to make it a loiter or delete it.
+- **Battery** (ADR-0025): the drone returns home by itself when its battery is down to what the trip home needs plus a 15 % reserve; a screen-filling warning asks the operator to turn round first; the planner and free fly say when a route won't fit the charge.
+- **Weather** (ADR-0026): wind as moving streaks (Open-Meteo, 80 m) and rain radar (RainViewer) on the map; a Wind tile in the top bar (measured if the drone reports it, else the forecast); the route tinted by headwind, and every time and battery estimate allowing for the wind.
+- **Console**: one long liquid-glass top bar with hover drawers on every metric, chase-view orbit around the drone in follow mode, map controls in one column, flight progress bottom-left, recenter fits what's left of the mission, the planned mission only shown while it's being flown.
+- **Mock vs ArduPlane**: the mock now flies ArduPlane's glide slope (height changing evenly along a leg); the drawn path starts at takeoff height.
+- **Dev**: edits to the protocol, links or domain reload the page instead of hot-swapping (a live mock drone kept the old decoder and refused new commands).
+
 ## 2026-10-09: operator awareness
 
 - **Flight progress panel**: the item being flown and how far it is (or the climb for a takeoff), time and distance left in the mission, and the way home, at the planner's ArduPlane figures. It only estimates for the mission the vehicle reports flying.

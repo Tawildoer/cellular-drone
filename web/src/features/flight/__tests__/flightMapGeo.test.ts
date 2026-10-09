@@ -693,6 +693,37 @@ describe('missionBounds', () => {
   it('is null with nothing to show', () => {
     expect(missionBounds(null, null, null)).toBeNull()
   })
+
+  it('from an index, spans only the items still to fly and the drone', () => {
+    const m = missionWith([
+      { type: 'vtolTakeoff', altM: 40 },
+      { type: 'waypoint', ...at(-3000, 0), altM: 60 },
+      { type: 'waypoint', ...at(1000, 1000), altM: 60 },
+      { type: 'waypoint', ...at(2000, 2000), altM: 60 },
+      { type: 'vtolLand', ...at(2500, 2500) },
+    ])
+    const drone = at(500, 500)
+    const [[w, s], [e, n]] = missionBounds(m, home, drone, 2)!
+    // The flown waypoint far west and home (no return to it) are left out.
+    expect(w).toBeCloseTo(drone.lon, 9)
+    expect(s).toBeCloseTo(drone.lat, 9)
+    expect(e).toBeCloseTo(at(2500, 0).lon, 9)
+    expect(n).toBeCloseTo(at(0, 2500).lat, 9)
+  })
+
+  it('from an index, keeps home when the rest of the mission returns there', () => {
+    const m = missionWith([
+      { type: 'vtolTakeoff', altM: 40 },
+      { type: 'waypoint', ...at(3000, 3000), altM: 60 },
+      { type: 'waypoint', ...at(1000, 1000), altM: 60 },
+      { type: 'returnToLaunch' },
+    ])
+    const [[w, s], [e, n]] = missionBounds(m, home, null, 2)!
+    expect(w).toBeCloseTo(home.lon, 9)
+    expect(s).toBeCloseTo(home.lat, 9)
+    expect(e).toBeCloseTo(at(1000, 0).lon, 9)
+    expect(n).toBeCloseTo(at(0, 1000).lat, 9)
+  })
 })
 
 describe('interpolatePose', () => {
@@ -740,4 +771,3 @@ describe('trackBearingDeg', () => {
     expect(trackBearingDeg([], 2000, 10)).toBeNull()
   })
 })
-

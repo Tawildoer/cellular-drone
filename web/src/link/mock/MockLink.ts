@@ -130,7 +130,9 @@ export class MockLink implements VehicleLink {
     if (fault.linkDropped) return { ok: false, reason: 'timeout' }
 
     const decodedReq = decodeMessage(encodeMessage(createMessage('cmd.request', cmd)))
-    if (!decodedReq || decodedReq.type !== 'cmd.request') return { ok: false, reason: 'rejected_by_vehicle' }
+    if (!decodedReq || decodedReq.type !== 'cmd.request') {
+      return { ok: false, reason: 'rejected_by_vehicle', detail: `malformed ${cmd.type} command` }
+    }
 
     const result = this.engine.applyCommand(decodedReq.payload)
 

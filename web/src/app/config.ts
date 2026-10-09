@@ -3,10 +3,11 @@ import type { VehicleLink } from '../link'
 import { MockLink } from '../link/mock'
 import { WebRtcLink } from '../link/webrtc'
 import { WsLink } from '../link/ws'
-import type { AuthClient, FlightLogRepository, MissionRepository, MissionTranslator, TerrainService } from '../services'
+import type { AuthClient, FlightLogRepository, MissionRepository, MissionTranslator, TerrainService, WeatherService } from '../services'
 import { ArduPilotMissionTranslator } from '../services/ardupilot'
 import { LocalStorageFlightLogRepository, LocalStorageMissionRepository } from '../services/local-storage'
 import { MapTilerTerrainService } from '../services/maptiler'
+import { PublicWeatherService } from '../services/weather'
 import { MockAuthClient } from '../services/mock'
 
 export const DEMO_VEHICLE_ID = 'demo'
@@ -76,6 +77,8 @@ export interface AppServices {
   /** Ground elevation for the planner's terrain profile; null without a
    * MapTiler key (the same key the map's 3D terrain needs). */
   terrain: TerrainService | null
+  /** Wind and rain radar for the map's weather overlays (ADR-0026). */
+  weather: WeatherService
 }
 
 function iceServersFromEnv(): RTCIceServer[] | undefined {
@@ -128,5 +131,6 @@ export function createAppServices(): AppServices {
     flightLogRepository: new LocalStorageFlightLogRepository(),
     missionTranslator: new ArduPilotMissionTranslator(),
     terrain: typeof maptilerKey === 'string' && maptilerKey ? new MapTilerTerrainService(maptilerKey) : null,
+    weather: new PublicWeatherService(),
   }
 }

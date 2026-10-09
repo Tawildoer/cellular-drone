@@ -2,15 +2,28 @@ import type {
   Command,
   CommandResult,
   FailsafeFlags,
+  FreeFlyState,
+  GimbalAttitude,
+  GimbalTarget,
   GpsStatus,
   HomePosition,
   Mission,
+  MissionItem,
   MissionUploadResult,
   VehicleEvent,
   VehicleState,
   VideoPreset,
 } from '../../domain'
-import { validateMission } from '../../domain'
+import {
+  batteryNeededToReturnPct,
+  bearingDeg,
+  FREE_FLY_LOITER_RADIUS_M,
+  GIMBAL_LOCK_RANGE_M,
+  haversineDistanceM,
+  returnHomeEstimate,
+  updateDrainRate,
+  validateMission,
+} from '../../domain'
 import { translateMission } from '../../ardupilot'
 import {
   CRUISE_SPEED_MPS,
@@ -19,6 +32,7 @@ import {
   isFlying,
   setPaused,
   startMission,
+  startCircle,
   startQland,
   startRtl,
   stepSim,
@@ -82,6 +96,9 @@ export interface DroneEngineOptions {
 
 const LOW_BATTERY_THRESHOLD_PERCENT = 20
 const FAILSAFE_KEYS = ['gcs', 'battery', 'geofence', 'rc'] as const
+/** The mock's gimbal holds one angle, looking ahead and down, until gimbal
+ * control exists; 45° puts its ground point about one height ahead. */
+const MOCK_GIMBAL_PITCH_DEG = -45
 const DEFAULT_HOME: HomePosition = { lat: -37.861, lon: 145.062, altAmslM: 50 }
 
 /**
@@ -98,6 +115,14 @@ export class DroneEngine {
   private failsafeFlags: FailsafeFlags = { gcs: false, battery: false, geofence: false, rc: false }
   private lastFlightMode: VehicleState['flightMode'] = 'UNKNOWN'
   private videoPreset: VideoPreset = 'medium'
+  private gimbalLock: GimbalTarget | null = null
+  /** Free fly (ADR-0024): its height, and the uploaded mission it replaced
+   * on the vehicle, put back when free fly ends. */
+  private freeFly: { altM: number; planned: Mission | null } | null = null
+  /** Battery return (ADR-0025): measured drain, and what getting home needs. */
+  private drainPctPerS: number | null = null
+  private lastBatteryPct: number | null = null
+  private toHomePct: number | undefined = undefined
   private vehicleId = ''
   private connectedElapsedS = 0
 
@@ -133,6 +158,20 @@ export class DroneEngine {
   }
 
   applyCommand(cmd: Command): CommandResult {
+    // Camera only, so allowed while the RC pilot has control (ADR-0023).
+    if (cmd.type === 'gimbal.lock') {
+      const distanceM = haversineDistanceM(this.sim.position, cmd.target)
+      if (distanceM > GIMBAL_LOCK_RANGE_M) {
+        return { ok: false, reason: 'rejected_by_vehicle', detail: `target ${Math.round(distanceM)} m away, over ${GIMBAL_LOCK_RANGE_M} m` }
+      }
+      this.gimbalLock = cmd.target
+      return { ok: true }
+    }
+    if (cmd.type === 'gimbal.release') {
+      if (!this.gimbalLock) return { ok: false, reason: 'rejected_by_vehicle', detail: 'not locked' }
+      this.gimbalLock = null
+      return { ok: true }
+    }
     if (cmd.type !== 'video.config' && this.fault.rcOverrideActive) {
       return { ok: false, reason: 'blocked_rc_override', detail: 'RC override is active' }
     }
@@ -169,14 +208,105 @@ export class DroneEngine {
         this.sim = setPaused(this.sim, false)
         return { ok: true }
       }
+      case 'freefly.start': {
+        if (this.freeFly) return { ok: false, reason: 'rejected_by_vehicle', detail: 'already in free fly' }
+        const { phase } = this.sim
+        if (!isFlying(phase)) return { ok: false, reason: 'rejected_by_vehicle', detail: 'free fly needs the drone airborne' }
+        if (phase === 'takeoff' || phase === 'qland') {
+          return { ok: false, reason: 'rejected_by_vehicle', detail: phase === 'takeoff' ? 'still taking off' : 'landing' }
+        }
+        this.freeFly = { altM: cmd.altM, planned: this.mission }
+        const now = Date.now()
+        this.mission = { id: 'free-fly', name: 'Free fly', items: [], createdAt: now, updatedAt: now }
+        const here = { lat: this.sim.position.lat, lon: this.sim.position.lon }
+        this.sim = { ...startCircle(this.sim, here, cmd.altM, FREE_FLY_LOITER_RADIUS_M), paused: false, missionIndex: 0, circleAtEnd: true }
+        return { ok: true }
+      }
+      case 'freefly.waypoint': {
+        if (!this.freeFly || !this.mission) return { ok: false, reason: 'rejected_by_vehicle', detail: 'not in free fly' }
+        const point = { lat: cmd.lat, lon: cmd.lon }
+        const wasCircling = this.circlingAtEnd()
+        const items = [...this.mission.items, { type: 'waypoint' as const, ...point, altM: this.freeFly.altM }]
+        this.mission = { ...this.mission, items, updatedAt: Date.now() }
+        if (items.length === 1) {
+          // The first: straight off the circle free fly started on.
+          const here = { lat: this.sim.position.lat, lon: this.sim.position.lon }
+          this.sim = {
+            ...this.sim,
+            phase: 'cruise',
+            missionIndex: 0,
+            target: point,
+            legStart: here,
+            targetAltM: this.freeFly.altM,
+            legStartAltM: this.sim.position.altRelM,
+            loiterCenter: null,
+            extending: false,
+          }
+        } else if (wasCircling && this.mission.items[this.sim.missionIndex]?.type !== 'loiter') {
+          // Waiting circle over a plain waypoint: leave it as soon as it's
+          // heading the right way. (A loiter waypoint finishes its lap first.)
+          this.sim = { ...this.sim, loiterTargetDeg: this.sim.loiterSweptDeg }
+        }
+        return { ok: true }
+      }
+      case 'freefly.remove': {
+        const refused = this.checkFreeFlyEdit(cmd.index, cmd.at)
+        if (refused) return refused
+        const mission = this.mission!
+        if (cmd.index === this.sim.missionIndex && this.circlingAtEnd()) {
+          return { ok: false, reason: 'rejected_by_vehicle', detail: 'it is circling there' }
+        }
+        const items = mission.items.filter((_, i) => i !== cmd.index)
+        this.mission = { ...mission, items, updatedAt: Date.now() }
+        if (cmd.index > this.sim.missionIndex) return { ok: true }
+        // The one being flown to: on to the next, or circle here if none.
+        const here = { lat: this.sim.position.lat, lon: this.sim.position.lon }
+        const next = items[cmd.index]
+        if (next && next.type !== 'vtolTakeoff' && next.type !== 'returnToLaunch') {
+          const phase = this.sim.phase === 'loiter' ? 'cruise' : this.sim.phase
+          const altM = next.type === 'vtolLand' ? 0 : next.altM
+          this.sim = {
+            ...this.sim,
+            phase,
+            target: { lat: next.lat, lon: next.lon },
+            legStart: here,
+            targetAltM: altM,
+            legStartAltM: this.sim.position.altRelM,
+            extending: false,
+            loiterCenter: null,
+          }
+        } else {
+          this.sim = { ...startCircle(this.sim, here, this.freeFly!.altM, FREE_FLY_LOITER_RADIUS_M), missionIndex: Math.max(0, items.length - 1) }
+        }
+        return { ok: true }
+      }
+      case 'freefly.loiter': {
+        const refused = this.checkFreeFlyEdit(cmd.index, cmd.at)
+        if (refused) return refused
+        const mission = this.mission!
+        const item = mission.items[cmd.index] as Extract<MissionItem, { type: 'waypoint' | 'loiter' }>
+        const point = { lat: item.lat, lon: item.lon }
+        const replaced: MissionItem = cmd.loiter
+          ? { type: 'loiter', ...point, altM: item.altM, radiusM: FREE_FLY_LOITER_RADIUS_M, turns: 1 }
+          : { type: 'waypoint', ...point, altM: item.altM }
+        this.mission = { ...mission, items: mission.items.map((it, i) => (i === cmd.index ? replaced : it)), updatedAt: Date.now() }
+        // Circling it mid-route as it becomes a waypoint: done with its lap,
+        // on to the next. (At the end of the route it circles either way.)
+        if (cmd.index === this.sim.missionIndex && !cmd.loiter && this.sim.phase === 'loiter') {
+          this.sim = { ...this.sim, loiterTargetDeg: 0, loiterUntilMs: null }
+        }
+        return { ok: true }
+      }
       case 'mode.rtl': {
         if (!isFlying(this.sim.phase)) return { ok: false, reason: 'rejected_by_vehicle', detail: 'not flying' }
         this.sim = startRtl(this.sim)
+        this.endFreeFly()
         return { ok: true }
       }
       case 'mode.qland': {
         if (!isFlying(this.sim.phase)) return { ok: false, reason: 'rejected_by_vehicle', detail: 'not flying' }
         this.sim = startQland(this.sim)
+        this.endFreeFly()
         return { ok: true }
       }
       case 'video.config': {
@@ -217,11 +347,16 @@ export class DroneEngine {
     // whenever the sim is sped up and never catches back up, so a clock-mode
     // loiter would see its end time as long past and leave after one lap.
     this.sim = stepSim(this.sim, this.mission, dtS, physics, Date.now())
+    if (this.freeFly && !isFlying(this.sim.phase)) this.endFreeFly()
     if (this.fault.lowBattery) {
       this.sim = { ...this.sim, batteryPercent: Math.min(this.sim.batteryPercent, 15) }
     }
+    const batteryEvent = this.updateBatteryReturn(dtS)
 
     const events = this.updateFailsafe()
+    const gimbalEvent = this.updateGimbalLock()
+    if (gimbalEvent) events.push(gimbalEvent)
+    if (batteryEvent) events.push(batteryEvent)
     const modeEvent = this.updateFlightMode()
     if (modeEvent) events.push(modeEvent)
     return events
@@ -242,6 +377,7 @@ export class DroneEngine {
         voltageV: 18 + (this.sim.batteryPercent / 100) * 7,
         currentA: flying ? 15 : 0.5,
         percent: this.sim.batteryPercent,
+        toHomePercent: this.toHomePct,
       },
       gps: this.gpsStatus(),
       flightMode: this.flightMode(),
@@ -253,6 +389,12 @@ export class DroneEngine {
       // A takeover is the pilot moving the switch off AUTO (ADR-0008).
       rc: { linked: true, overrideActive: this.fault.rcOverrideActive, modeSwitch: this.fault.rcOverrideActive ? 'FBWA' : 'AUTO' },
       failsafe: this.failsafeFlags,
+      gimbal: this.gimbalAttitude(),
+      freeFly: this.freeFlyState(),
+      // The mock's simulated wind, when one is set: what ArduPilot's own
+      // estimate would report. Calm (the default) reports nothing, so the
+      // console falls back to the forecast.
+      wind: this.fault.wind.speedMps > 0 ? { speedMps: this.fault.wind.speedMps, fromDeg: this.fault.wind.directionDeg } : undefined,
       updatedAt: Date.now(),
     }
   }
@@ -279,6 +421,100 @@ export class DroneEngine {
         if (!this.sim.paused) return 'AUTO'
         return deriveVtolState(this.sim.phase) === 'mc' ? 'QLOITER' : 'LOITER'
     }
+  }
+
+  /**
+   * Battery return (ADR-0025): while flying, what getting home and landing
+   * would take at the drain measured so far; once the battery is down to
+   * that, RTL, from wherever it is and whatever it was doing (a mission,
+   * free fly, a pause). Not while it's already returning or landing, nor
+   * while the RC pilot has control: their call.
+   */
+  private updateBatteryReturn(dtS: number): VehicleEvent | null {
+    const { phase, batteryPercent, position, home } = this.sim
+    if (this.lastBatteryPct !== null && isFlying(phase)) {
+      this.drainPctPerS = updateDrainRate(this.drainPctPerS, this.lastBatteryPct, batteryPercent, dtS)
+    }
+    this.lastBatteryPct = batteryPercent
+    if (!isFlying(phase) || phase === 'takeoff' || this.drainPctPerS === null) {
+      this.toHomePct = undefined
+      return null
+    }
+    const aircraft = { point: position, altM: position.altRelM, fixedWing: deriveVtolState(phase) === 'fw' }
+    const wind = { speedMps: this.fault.wind.speedMps, fromDeg: this.fault.wind.directionDeg }
+    this.toHomePct = batteryNeededToReturnPct(returnHomeEstimate(aircraft, home, undefined, wind).durationS, this.drainPctPerS)
+    if (phase === 'rtl' || phase === 'qland' || this.fault.rcOverrideActive || batteryPercent > this.toHomePct) return null
+    this.sim = startRtl(setPaused(this.sim, false))
+    this.endFreeFly()
+    return {
+      kind: 'status',
+      text: `Battery: returning home (${Math.round(batteryPercent)}% left, about ${Math.round(this.toHomePct)}% needed to get home and land)`,
+      ts: Date.now(),
+    }
+  }
+
+  /** Releases the lock once the aircraft is out of range; it stays released
+   * if the aircraft comes back (ADR-0023). */
+  private updateGimbalLock(): VehicleEvent | null {
+    if (!this.gimbalLock || haversineDistanceM(this.sim.position, this.gimbalLock) <= GIMBAL_LOCK_RANGE_M) return null
+    this.gimbalLock = null
+    return { kind: 'status', text: `Gimbal lock released: target over ${GIMBAL_LOCK_RANGE_M} m away`, ts: Date.now() }
+  }
+
+  /** Pointed at a spot from wherever the aircraft is, anywhere in the
+   * hemisphere below it: the operator's lock, else a loiter's centre.
+   * Otherwise the default look ahead and down. */
+  private gimbalAttitude(): GimbalAttitude {
+    const lock = this.gimbalLock ?? undefined
+    // Circling a loiter, it watches the centre; the operator's lock wins.
+    const { loiterCenter, phase, home } = this.sim
+    const loiterTarget = phase === 'loiter' && loiterCenter ? { ...loiterCenter, altAmslM: home.altAmslM } : undefined
+    const target = lock ?? loiterTarget
+    if (!target) return { pitchDeg: MOCK_GIMBAL_PITCH_DEG, yawDeg: 0 }
+    const { position, headingDeg } = this.sim
+    // The mock's altAmslM doesn't follow its climb; build it from home.
+    const heightAboveM = home.altAmslM + position.altRelM - target.altAmslM
+    const distanceM = haversineDistanceM(position, target)
+    const pitchDeg = Math.max(-90, Math.min(0, (-Math.atan2(heightAboveM, distanceM) * 180) / Math.PI))
+    const yawDeg = distanceM < 0.5 ? 0 : ((((bearingDeg(position, target) - headingDeg) % 360) + 540) % 360) - 180
+    return { pitchDeg, yawDeg, lock, lookAt: target }
+  }
+
+  private freeFlyState(): FreeFlyState | undefined {
+    if (!this.freeFly || !this.mission) return undefined
+    const waypoints = this.mission.items.flatMap((item) =>
+      item.type === 'waypoint'
+        ? [{ lat: item.lat, lon: item.lon }]
+        : item.type === 'loiter'
+          ? [{ lat: item.lat, lon: item.lon, loiterRadiusM: item.radiusM }]
+          : [],
+    )
+    return { altM: this.freeFly.altM, waypoints, circling: this.circlingAtEnd() }
+  }
+
+  /** Circling at the end of the free-fly route, waiting for a waypoint. */
+  private circlingAtEnd(): boolean {
+    return !!this.freeFly && this.sim.phase === 'loiter' && this.sim.circleAtEnd && !this.mission?.items[this.sim.missionIndex + 1]
+  }
+
+  /** Why a free-fly waypoint can't be edited, or null if it can: not in free
+   * fly, the route has changed under the browser, or it's already flown. */
+  private checkFreeFlyEdit(index: number, at: { lat: number; lon: number }): CommandResult | null {
+    if (!this.freeFly || !this.mission) return { ok: false, reason: 'rejected_by_vehicle', detail: 'not in free fly' }
+    const item = this.mission.items[index]
+    if (!item || (item.type !== 'waypoint' && item.type !== 'loiter') || haversineDistanceM(item, at) > 1) {
+      return { ok: false, reason: 'rejected_by_vehicle', detail: 'the route has changed, try again' }
+    }
+    if (index < this.sim.missionIndex) return { ok: false, reason: 'rejected_by_vehicle', detail: 'already flown' }
+    return null
+  }
+
+  /** Back to the planned mission (the agent re-uploads it on a real FC). */
+  private endFreeFly(): void {
+    if (!this.freeFly) return
+    this.mission = this.freeFly.planned
+    this.freeFly = null
+    this.sim = { ...this.sim, circleAtEnd: false, missionIndex: 0 }
   }
 
   private updateFailsafe(): VehicleEvent[] {

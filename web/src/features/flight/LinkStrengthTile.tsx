@@ -1,6 +1,8 @@
 import { useId } from 'react'
 import { useVehicleStore } from '../../app/store-hooks'
+import { HoverDrawer } from '../../components/HoverDrawer'
 import { smoothPath, type PathPoint } from '../../components/smoothPath'
+import { videoRows } from './hudDetails'
 import {
   GRADE_LABEL,
   gradeStatus,
@@ -12,7 +14,8 @@ import {
 } from './linkQuality'
 
 const WINDOW_MS = 10_000
-const WIDTH = 48
+/** The graph is the whole tile: wide enough to read ten seconds by. */
+const WIDTH = 84
 const HEIGHT = 18
 const PAD = 2
 
@@ -69,6 +72,7 @@ function summary(series: StrengthPoint[]): string {
 export function LinkStrengthTile() {
   const gradientId = useId()
   const history = useVehicleStore((s) => s.linkHistory)
+  const linkStatus = useVehicleStore((s) => s.linkStatus)
   const series = strengthSeries(history, WINDOW_MS)
   const now = series.at(-1)?.score
   const grade = typeof now === 'number' ? strengthGrade(now) : undefined
@@ -83,52 +87,62 @@ export function LinkStrengthTile() {
   const fairOffset = (fairY - PAD) / span
   const poorOffset = (poorY - PAD) / span
 
+  const scores = series.map((p) => p.score).filter((s): s is number => typeof s === 'number')
+  const pct = (score: number) => `${Math.round(score * 100)}%`
+  const more = [
+    {
+      label: 'Strength',
+      value: typeof now === 'number' ? `${pct(now)} ${GRADE_LABEL[strengthGrade(now)]}` : now === 'down' ? 'Down' : '—',
+      status: grade ? gradeStatus(grade) : now === 'down' ? ('critical' as const) : undefined,
+    },
+    { label: `Lowest ${WINDOW_MS / 1000} s`, value: scores.length > 0 ? pct(Math.min(...scores)) : '—' },
+    ...videoRows(linkStatus),
+  ]
+
   return (
-    <div
-      className="flex h-7 shrink-0 items-center gap-1 overflow-hidden rounded-lg bg-secondary px-1.5"
-      style={{ width: 125 }}
-      title={`Link strength, last ${WINDOW_MS / 1000} s`}
-    >
-      <span className="hud-label text-[0.5625rem]">Link</span>
-      <div className="flex items-center gap-1.5">
-        <svg width={WIDTH} height={HEIGHT} role="img" aria-label={summary(series)} className="block overflow-visible">
-          <defs>
-            <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1={0} x2={0} y1={PAD} y2={HEIGHT - PAD}>
-              <stop offset={0} stopColor="var(--status-good)" />
-              <stop offset={fairOffset} stopColor="var(--status-good)" />
-              <stop offset={fairOffset} stopColor="var(--status-warning)" />
-              <stop offset={poorOffset} stopColor="var(--status-warning)" />
-              <stop offset={poorOffset} stopColor="var(--status-critical)" />
-              <stop offset={1} stopColor="var(--status-critical)" />
-            </linearGradient>
-          </defs>
-          {[fairY, poorY].map((ly) => (
-            <line key={ly} x1={0} x2={WIDTH} y1={ly} y2={ly} stroke="var(--border)" strokeWidth={1} />
-          ))}
-          {downRuns(series).map(([from, to], i) => (
-            <line key={i} x1={from} x2={to} y1={HEIGHT - 1} y2={HEIGHT - 1} stroke="var(--glass-border-hover)" strokeWidth={2} strokeLinecap="round" />
-          ))}
-          {runs.map((run, i) => {
-            return (
-              <path
-                key={i}
-                d={smoothPath(run)}
-                fill="none"
-                stroke={`url(#${gradientId})`}
-                strokeWidth={1.75}
-                strokeLinejoin="round"
-                strokeLinecap="round"
-              />
-            )
-          })}
-          {latest && statusColor && (
-            <circle cx={latest.x} cy={latest.y} r={3} fill={statusColor} stroke="var(--card)" strokeWidth={1.5} />
-          )}
-        </svg>
-        <span className="hud-value" style={statusColor ? { color: statusColor, textShadow: 'none' } : undefined}>
-          {grade ? GRADE_LABEL[grade] : now === 'down' ? 'Down' : '—'}
-        </span>
+    <HoverDrawer title="Link strength" rows={more} className="flex flex-1">
+      <div
+        className="flex h-7 flex-1 items-center justify-center gap-1 overflow-hidden rounded-lg bg-secondary px-1.5 glass-tile"
+        style={{ minWidth: 100 }}
+      >
+        <span className="hud-label sr-only">Link strength</span>
+        <div className="flex items-center">
+          <svg width={WIDTH} height={HEIGHT} role="img" aria-label={summary(series)} className="block overflow-visible">
+            <defs>
+              <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1={0} x2={0} y1={PAD} y2={HEIGHT - PAD}>
+                <stop offset={0} stopColor="var(--status-good)" />
+                <stop offset={fairOffset} stopColor="var(--status-good)" />
+                <stop offset={fairOffset} stopColor="var(--status-warning)" />
+                <stop offset={poorOffset} stopColor="var(--status-warning)" />
+                <stop offset={poorOffset} stopColor="var(--status-critical)" />
+                <stop offset={1} stopColor="var(--status-critical)" />
+              </linearGradient>
+            </defs>
+            {[fairY, poorY].map((ly) => (
+              <line key={ly} x1={0} x2={WIDTH} y1={ly} y2={ly} stroke="var(--border)" strokeWidth={1} />
+            ))}
+            {downRuns(series).map(([from, to], i) => (
+              <line key={i} x1={from} x2={to} y1={HEIGHT - 1} y2={HEIGHT - 1} stroke="var(--glass-border-hover)" strokeWidth={2} strokeLinecap="round" />
+            ))}
+            {runs.map((run, i) => {
+              return (
+                <path
+                  key={i}
+                  d={smoothPath(run)}
+                  fill="none"
+                  stroke={`url(#${gradientId})`}
+                  strokeWidth={1.75}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
+              )
+            })}
+            {latest && statusColor && (
+              <circle cx={latest.x} cy={latest.y} r={3} fill={statusColor} stroke="var(--card)" strokeWidth={1.5} />
+            )}
+          </svg>
+        </div>
       </div>
-    </div>
+    </HoverDrawer>
   )
 }

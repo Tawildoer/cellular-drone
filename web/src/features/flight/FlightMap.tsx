@@ -11,9 +11,15 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&ur
 import type { Feature, Polygon } from 'geojson'
 import { LocateFixed, Navigation } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { useVehicleStore } from '../../app/store-hooks'
+import { useVehicleStore, useWeatherService } from '../../app/store-hooks'
 import { useTelemetryStale } from './telemetryAge'
-import type { GeoPoint, Mission, VehicleState } from '../../domain'
+import { createGimbalRayLayer, type GimbalRayLayer } from './gimbalRayLayer'
+import { createProjectionProbe } from './projectionProbe'
+import { useWeatherOverlay, type WeatherOverlay } from './useWeatherOverlay'
+import { WeatherLegend } from './WeatherLegend'
+import { WindStreaks } from './WindStreaks'
+import { useRouteWind } from './forecastWind'
+import type { GeoPoint, GimbalAttitude, Mission, VehicleState, WindVector } from '../../domain'
 import {
   aircraftMarkerScale,
   appendTrailPoint,
@@ -24,6 +30,9 @@ import {
   buildAircraftMarkerGeoJson,
   buildFenceGeoJson,
   buildFloatingTrailGeoJson,
+  buildGimbalLockGeoJson,
+  buildGimbalRayLineGeoJson,
+  gimbalRay,
   buildMissionFloatingPathGeoJson,
   buildMissionLoiterRingLinesGeoJson,
   buildMissionLoiterRingsGeoJson,
@@ -173,6 +182,10 @@ const WAYPOINT_COLOR: ExpressionSpecification = ['case', ['boolean', ['get', 'do
 const MISSION_FLOATING_PATH_SOURCE = 'mission-floating-path'
 const MISSION_LOITER_RINGS_SOURCE = 'mission-loiter-rings'
 const AIRCRAFT_MARKER_SOURCE = 'aircraft-marker'
+const GIMBAL_RAY_LAYER = 'gimbal-ray'
+const PROJECTION_PROBE_LAYER = 'projection-probe'
+const GIMBAL_RAY_FLAT_SOURCE = 'gimbal-ray-flat'
+const GIMBAL_LOCK_SOURCE = 'gimbal-lock'
 const TRAIL_FLAT_SOURCE = 'trail-flat'
 const MISSION_PATH_FLAT_SOURCE = 'mission-path-flat'
 const MISSION_LOITER_RINGS_FLAT_SOURCE = 'mission-loiter-rings-flat'
@@ -209,7 +222,13 @@ const LAYERS_3D = [
  * for not using a layer `maxzoom`: a tilted camera loads the tiles nearest it
  * at a higher zoom than its own, so just below the threshold the flat path
  * went missing there while the 3D one was already switched off. */
-const LAYERS_FLAT = [TRAIL_FLAT_SOURCE, MISSION_PATH_FLAT_SOURCE, MISSION_LOITER_RINGS_FLAT_SOURCE, MISSION_WAYPOINTS_FLAT_SOURCE]
+const LAYERS_FLAT = [
+  TRAIL_FLAT_SOURCE,
+  MISSION_PATH_FLAT_SOURCE,
+  MISSION_LOITER_RINGS_FLAT_SOURCE,
+  MISSION_WAYPOINTS_FLAT_SOURCE,
+  GIMBAL_RAY_FLAT_SOURCE,
+]
 
 function setVisible(map: MaplibreMap, ids: string[], visible: boolean) {
   const visibility = visible ? 'visible' : 'none'
@@ -276,9 +295,14 @@ function createHomeElement(): HTMLDivElement {
 // Fixed (not the vehicle's live position) so the first leg of the floating
 // path is a stable reference line — using live position instead made it
 // redraw every tick and look like it was chasing the drone around.
-function homeAltitudePoint(vehicleState: VehicleState | null): AltitudePoint | undefined {
+/** Where the planned path starts: above home at the takeoff height, since a
+ * VTOL takeoff climbs straight up there before the first leg (as the
+ * planner's profile has it), not from the ground. */
+function homeAltitudePoint(vehicleState: VehicleState | null, mission: Mission | null = null): AltitudePoint | undefined {
   if (!vehicleState?.home) return undefined
-  return { point: { lat: vehicleState.home.lat, lon: vehicleState.home.lon }, altM: 0 }
+  const first = mission?.items[0]
+  const altM = first?.type === 'vtolTakeoff' ? first.altM : 0
+  return { point: { lat: vehicleState.home.lat, lon: vehicleState.home.lon }, altM }
 }
 
 function dronePoint(vehicleState: VehicleState | null): GeoPoint | undefined {
@@ -303,24 +327,45 @@ function pathClearedBeforeIndex(vehicleState: VehicleState | null): number | und
 // the drone's projection onto the line made it flicker as the drone circled
 // the endpoint. The leg out of the loiter is drawn untrimmed for the same
 // reason, until the drone actually leaves along it.
-function floatingPathGeoJson(mission: Mission | null, vehicleState: VehicleState | null, lapping: boolean, metersPerPx: number) {
+function floatingPathGeoJson(
+  mission: Mission | null,
+  vehicleState: VehicleState | null,
+  lapping: boolean,
+  metersPerPx: number,
+  wind: WindVector | null,
+) {
   const clearedBeforeIndex = pathClearedBeforeIndex(vehicleState)
-  const home = homeAltitudePoint(vehicleState)
+  const home = homeAltitudePoint(vehicleState, mission)
   if (lapping && clearedBeforeIndex !== undefined) {
-    return buildMissionFloatingPathGeoJson(mission, home, clearedBeforeIndex + 1, undefined, metersPerPx)
+    return buildMissionFloatingPathGeoJson(mission, home, clearedBeforeIndex + 1, undefined, metersPerPx, wind)
   }
-  return buildMissionFloatingPathGeoJson(mission, home, clearedBeforeIndex, dronePoint(vehicleState), metersPerPx)
+  return buildMissionFloatingPathGeoJson(mission, home, clearedBeforeIndex, dronePoint(vehicleState), metersPerPx, wind)
 }
 
 // The flat counterpart, with the same lapping rule.
-function flatPathGeoJson(mission: Mission | null, vehicleState: VehicleState | null, lapping: boolean) {
+function flatPathGeoJson(mission: Mission | null, vehicleState: VehicleState | null, lapping: boolean, wind: WindVector | null) {
   const clearedBeforeIndex = pathClearedBeforeIndex(vehicleState)
   const home = homeAltitudePoint(vehicleState)
   if (lapping && clearedBeforeIndex !== undefined) {
-    return buildMissionPathLinesGeoJson(mission, home, clearedBeforeIndex + 1)
+    return buildMissionPathLinesGeoJson(mission, home, clearedBeforeIndex + 1, undefined, wind)
   }
-  return buildMissionPathLinesGeoJson(mission, home, clearedBeforeIndex, dronePoint(vehicleState))
+  return buildMissionPathLinesGeoJson(mission, home, clearedBeforeIndex, dronePoint(vehicleState), wind)
 }
+
+/** The planned path's colour (ADR-0026): purple, or tinted by the leg's
+ * wind: green with a tailwind, amber into a notable headwind, red a strong
+ * one (domain legWindTint). */
+const PATH_COLOR: ExpressionSpecification = [
+  'match',
+  ['get', 'windTint'],
+  'strongHead',
+  '#d03b3b',
+  'head',
+  '#fab219',
+  'tail',
+  '#0ca30c',
+  '#9f6fff',
+]
 
 // The overlays are built in metres; this lets them keep a minimum on-screen
 // size however far out the map is zoomed (flightMapGeo.ts, atLeastPx).
@@ -343,6 +388,30 @@ function aircraftGeoJson(map: MaplibreMap, vehicleState: VehicleState | null) {
   const pose = aircraftPose(vehicleState)
   return buildAircraftMarkerGeoJson(pose, pose ? aircraftMarkerScale(map.getZoom(), pose.point.lat) : 1)
 }
+
+/** The gimbal's line of sight, from the aircraft to where it meets the
+ * terrain: a smooth 3D line (gimbalRayLayer) and its flat stand-in. `pose`
+ * rather than vehicleState so the follow camera can draw it from the
+ * interpolated aircraft. */
+function setGimbalRay(map: MaplibreMap, layer: GimbalRayLayer | null, pose: AircraftPose | null, gimbal: GimbalAttitude | undefined) {
+  const groundAt = (p: GeoPoint) => map.queryTerrainElevation([p.lon, p.lat]) ?? 0
+  const ray = gimbalRay(pose, gimbal, groundAt)
+  layer?.setSegment(
+    pose && ray ? { from: { point: pose.point, elevationM: ray.startHeightM }, to: { point: ray.end, elevationM: ray.endHeightM } } : null,
+  )
+  setSourceData(map, GIMBAL_RAY_FLAT_SOURCE, buildGimbalRayLineGeoJson(pose, ray))
+  setSourceData(map, GIMBAL_LOCK_SOURCE, buildGimbalLockGeoJson(gimbal))
+}
+
+/** How long a single click waits to be sure it isn't half a double-click,
+ * when double-click means something (free fly). About the OS default. */
+const DOUBLE_CLICK_MS = 250
+/** How close to a waypoint marker (screen pixels) a hover or click counts. */
+const WAYPOINT_HIT_PX = 22
+
+/** Faint: it shows where the camera looks without competing with the path. */
+const GIMBAL_RAY_OPACITY = 0.4
+const GIMBAL_RAY_WIDTH_PX = 4
 
 /** Follow-drone camera: a third-person chase view along the heading, 30°
  * above the horizon, or straight down; both turned so the aircraft's
@@ -367,6 +436,40 @@ const FOLLOW_TRACK_MIN_M = 10
 const CHASE_TOP_PADDING = 0.35
 /** A press that moves this far is a drag: it takes the camera back. */
 const DRAG_TAKEOVER_PX = 5
+/** A click: the press strays no further than this, at any point... */
+const CLICK_SLOP_PX = 4
+/** ...and is let go within this long (longer is a press-and-hold). */
+const CLICK_MAX_MS = 600
+/** Chase view orbit: dragging sideways turns the camera around the
+ * aircraft, up and down raises and lowers it, between these pitches. */
+const ORBIT_DEG_PER_PX = 0.35
+const ORBIT_PITCH_PER_PX = 0.25
+const ORBIT_MIN_PITCH = 20
+const ORBIT_MAX_PITCH = 80
+
+/** Where the chase camera sits relative to the aircraft's direction of
+ * travel: turned round by `bearingOffsetDeg`, at `pitchDeg`. */
+interface ChaseOrbit {
+  bearingOffsetDeg: number
+  pitchDeg: number
+}
+const DEFAULT_ORBIT: ChaseOrbit = { bearingOffsetDeg: 0, pitchDeg: CHASE_PITCH }
+
+/** `from` turned towards `to` by `blend` (0..1), the short way round. */
+function blendBearing(from: number, to: number, blend: number): number {
+  return from + ((((to - from) % 360) + 540) % 360 - 180) * blend
+}
+
+const WEATHER_OVERLAY_KEY = 'cellular-drone:weather-overlay'
+
+function readWeatherOverlay(): WeatherOverlay {
+  try {
+    const saved = localStorage.getItem(WEATHER_OVERLAY_KEY)
+    return saved === 'wind' || saved === 'rain' ? saved : 'none'
+  } catch {
+    return 'none'
+  }
+}
 
 function readFollowView(): FollowView {
   try {
@@ -376,13 +479,12 @@ function readFollowView(): FollowView {
   }
 }
 
-/** Camera for the follow view. `blend` is how far to turn towards the
- * heading this time: 1 snaps, a small value turns gradually frame by frame. */
-function followCamera(map: MaplibreMap, view: FollowView, headingDeg: number, blend: number) {
-  const padding = { top: view === 'chase' ? map.getContainer().clientHeight * CHASE_TOP_PADDING : 0, bottom: 0, left: 0, right: 0 }
-  const current = map.getBearing()
-  const turn = ((headingDeg - current + 540) % 360) - 180
-  return { bearing: current + turn * blend, pitch: view === 'chase' ? CHASE_PITCH : 0, padding }
+/** Camera for the follow view, looking along `trackDeg` (already smoothed),
+ * turned and tilted by the operator's orbit in chase view. */
+function followCamera(map: MaplibreMap, view: FollowView, trackDeg: number, orbit: ChaseOrbit) {
+  const chase = view === 'chase'
+  const padding = { top: chase ? map.getContainer().clientHeight * CHASE_TOP_PADDING : 0, bottom: 0, left: 0, right: 0 }
+  return { bearing: chase ? trackDeg + orbit.bearingOffsetDeg : trackDeg, pitch: chase ? orbit.pitchDeg : 0, padding }
 }
 
 export interface FlightMapProps {
@@ -390,10 +492,21 @@ export interface FlightMapProps {
   /** Opt-in only — when provided, clicking the map reports the clicked
    * point (e.g. the mission planner adding a waypoint). Not used by the
    * flight screen, so normal flight behavior is unaffected. */
-  onMapClick?: (point: GeoPoint) => void
+  /** The clicked spot, and the terrain's height there (null without terrain). */
+  onMapClick?: (point: GeoPoint, groundElevationM: number | null) => void
+  /** Given, a double-click calls it instead of zooming in, and a single
+   * click waits DOUBLE_CLICK_MS to be sure it isn't the first of two. */
+  onMapDoubleClick?: (point: GeoPoint) => void
+  /** Given, mission waypoints are clickable: hovering one shows a pointer,
+   * clicking it reports its index and where on screen (client pixels), in
+   * place of a map click. */
+  onWaypointClick?: (index: number, screen: { x: number; y: number }) => void
+  /** False hides the map's own controls (basemap, follow, recenter): in the
+   * small picture-in-picture tile it's just a picture of the map. */
+  showControls?: boolean
 }
 
-export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
+export function FlightMap({ mission = null, onMapClick, onMapDoubleClick, onWaypointClick, showControls = true }: FlightMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MaplibreMap | null>(null)
   const homeMarkerRef = useRef<Marker | null>(null)
@@ -404,10 +517,26 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
   const lappingLatchRef = useRef<{ missionId: string; index: number } | null>(null)
   const [basemap, setBasemap] = useState<'street' | 'satellite'>('street')
   const [following, setFollowing] = useState(false)
+  /** The map once loaded, for hooks that add layers to it. */
+  const [loadedMap, setLoadedMap] = useState<MaplibreMap | null>(null)
+  const [weatherOverlay, setWeatherOverlay] = useState<WeatherOverlay>(readWeatherOverlay)
+  const weatherService = useWeatherService()
+  const routeWind = useRouteWind()
+  const routeWindRef = useRef(routeWind)
+  useEffect(() => {
+    routeWindRef.current = routeWind
+  }, [routeWind])
+  // Under the flight overlays: the route and aircraft stay on top.
+  const { status: weatherStatus, windGrid } = useWeatherOverlay(loadedMap, weatherOverlay, weatherService, TRAIL_SOURCE)
   const [followView, setFollowView] = useState<FollowView>(readFollowView)
   /** While following starts, its fly-in isn't cut short by telemetry updates. */
   const followSettlingRef = useRef(false)
   const followingRef = useRef(false)
+  const followViewRef = useRef<FollowView>(followView)
+  /** The chase camera's orbit, and the smoothed direction of travel it's
+   * measured from (null until following starts). */
+  const orbitRef = useRef<ChaseOrbit>(DEFAULT_ORBIT)
+  const trackBearingRef = useRef<number | null>(null)
   /** The last two telemetry poses, for drawing in between (interpolatePose),
    * and a couple of seconds of them for the camera's ground track. */
   const posesRef = useRef<{ prev: TimedPose | null; latest: TimedPose | null; history: TimedPose[] }>({
@@ -420,6 +549,7 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
   const telemetryStale = useTelemetryStale()
   // For map event handlers registered once at mount (the zoom resize below).
   const vehicleStateRef = useRef(vehicleState)
+  const gimbalLayerRef = useRef<GimbalRayLayer | null>(null)
   useEffect(() => {
     vehicleStateRef.current = vehicleState
   }, [vehicleState])
@@ -436,6 +566,21 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
   useEffect(() => {
     onMapClickRef.current = onMapClick
   }, [onMapClick])
+  const onMapDoubleClickRef = useRef(onMapDoubleClick)
+  const onWaypointClickRef = useRef(onWaypointClick)
+  useEffect(() => {
+    onWaypointClickRef.current = onWaypointClick
+    if (!onWaypointClick) mapRef.current?.getCanvas().style.removeProperty('cursor')
+  }, [onWaypointClick])
+  const pendingClickRef = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    onMapDoubleClickRef.current = onMapDoubleClick
+    // Double-click zoom is off while double-click does something else.
+    const map = mapRef.current
+    if (!map) return
+    if (onMapDoubleClick) map.doubleClickZoom.disable()
+    else map.doubleClickZoom.enable()
+  }, [onMapDoubleClick])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -470,23 +615,125 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
 
     // MapLibre only fires 'click' for an actual tap/click, never for a drag-pan,
     // so this doesn't need to distinguish "clicked" from "just finished panning".
-    map.on('click', (e) => {
-      onMapClickRef.current?.({ lat: e.lngLat.lat, lon: e.lngLat.lng })
+    // The waypoint nearest the pointer, within WAYPOINT_HIT_PX of where it's
+    // drawn, if waypoints are clickable. Measured to each marker's place on
+    // screen rather than hit-testing the rendered slab: zoomed in, markers
+    // float at their height (projected with the last frame's matrix, at the
+    // terrain plus the item's height, as the overlays draw it), and the slab
+    // is a sliver seen from the side. Zoomed out they're flat on the ground.
+    const projection = createProjectionProbe(PROJECTION_PROBE_LAYER, map)
+    const waypointAt = (p: { x: number; y: number }): number | null => {
+      if (!onWaypointClickRef.current || !loadedRef.current) return null
+      const floating = map.getZoom() >= FLAT_OVERLAY_MAX_ZOOM
+      let best: number | null = null
+      let bestPx = WAYPOINT_HIT_PX
+      for (const [index, item] of (missionRef.current?.items ?? []).entries()) {
+        if (item.type !== 'waypoint' && item.type !== 'loiter') continue
+        const ground = map.queryTerrainElevation([item.lon, item.lat]) ?? 0
+        const screen = floating ? projection.project(item, ground + item.altM) : map.project([item.lon, item.lat])
+        if (!screen) continue
+        const px = Math.hypot(screen.x - p.x, screen.y - p.y)
+        if (px <= bestPx) {
+          best = index
+          bestPx = px
+        }
+      }
+      return best
+    }
+    map.on('mousemove', (e) => {
+      if (!onWaypointClickRef.current) return
+      map.getCanvas().style.cursor = waypointAt(e.point) !== null ? 'pointer' : ''
     })
+
+    // Only a press that stayed put and was let go promptly is a click: a
+    // drag, however short or wherever it ends, never locks the gimbal, adds
+    // a waypoint or opens a menu. MapLibre's own test only compares where
+    // the press began and ended, which a pan that comes back (or a camera
+    // moving under the pointer) can pass. Set on release, which comes
+    // before MapLibre's click.
+    let pressStart: { x: number; y: number; atMs: number } | null = null
+    let pressStrayPx = 0
+    let lastPressWasClick = true
+
+    map.on('click', (e) => {
+      if (!lastPressWasClick) return
+      const waypoint = waypointAt(e.point)
+      if (waypoint !== null) {
+        window.clearTimeout(pendingClickRef.current)
+        pendingClickRef.current = undefined
+        onWaypointClickRef.current?.(waypoint, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
+        return
+      }
+      const point = { lat: e.lngLat.lat, lon: e.lngLat.lng }
+      const elevation = map.queryTerrainElevation(e.lngLat)
+      if (!onMapDoubleClickRef.current) {
+        onMapClickRef.current?.(point, elevation)
+        return
+      }
+      // A second click within the window is half of a double-click: drop
+      // the first, the dblclick event below takes it from here.
+      if (pendingClickRef.current !== undefined) {
+        window.clearTimeout(pendingClickRef.current)
+        pendingClickRef.current = undefined
+        return
+      }
+      pendingClickRef.current = window.setTimeout(() => {
+        pendingClickRef.current = undefined
+        onMapClickRef.current?.(point, elevation)
+      }, DOUBLE_CLICK_MS)
+    })
+    map.on('dblclick', (e) => {
+      if (!onMapDoubleClickRef.current) return
+      e.preventDefault()
+      if (!lastPressWasClick) return
+      // Double-clicking a waypoint opens its menu (the click above), not a
+      // new waypoint on top of it.
+      if (waypointAt(e.point) !== null) return
+      window.clearTimeout(pendingClickRef.current)
+      pendingClickRef.current = undefined
+      onMapDoubleClickRef.current({ lat: e.lngLat.lat, lon: e.lngLat.lng })
+    })
+    if (onMapDoubleClickRef.current) map.doubleClickZoom.disable()
 
     // Dragging the map by hand takes the camera back: stop following. Read
     // from the pointer itself, because the follow camera's own moves on each
-    // update would cancel a drag before MapLibre reported one.
+    // update would cancel a drag before MapLibre reported one. In chase view
+    // a drag orbits the camera round the aircraft instead, and following
+    // carries on.
     const canvas = map.getCanvasContainer()
     let pressedAt: { x: number; y: number } | null = null
-    const onPointerDown = (e: PointerEvent) => (pressedAt = { x: e.clientX, y: e.clientY })
+    let lastAt: { x: number; y: number } | null = null
+    const onPointerDown = (e: PointerEvent) => {
+      pressedAt = { x: e.clientX, y: e.clientY }
+      lastAt = pressedAt
+      pressStart = { x: e.clientX, y: e.clientY, atMs: performance.now() }
+      pressStrayPx = 0
+    }
     const onPointerMove = (e: PointerEvent) => {
-      if (pressedAt && Math.hypot(e.clientX - pressedAt.x, e.clientY - pressedAt.y) > DRAG_TAKEOVER_PX) {
+      if (pressStart) pressStrayPx = Math.max(pressStrayPx, Math.hypot(e.clientX - pressStart.x, e.clientY - pressStart.y))
+      if (!pressedAt || !lastAt) return
+      if (followingRef.current && followViewRef.current === 'chase') {
+        const dx = e.clientX - lastAt.x
+        const dy = e.clientY - lastAt.y
+        lastAt = { x: e.clientX, y: e.clientY }
+        const orbit = orbitRef.current
+        orbitRef.current = {
+          bearingOffsetDeg: orbit.bearingOffsetDeg - dx * ORBIT_DEG_PER_PX,
+          pitchDeg: Math.min(ORBIT_MAX_PITCH, Math.max(ORBIT_MIN_PITCH, orbit.pitchDeg - dy * ORBIT_PITCH_PER_PX)),
+        }
+        return
+      }
+      if (Math.hypot(e.clientX - pressedAt.x, e.clientY - pressedAt.y) > DRAG_TAKEOVER_PX) {
         pressedAt = null
         setFollowing(false)
       }
     }
-    const onPointerUp = () => (pressedAt = null)
+    const onPointerUp = () => {
+      if (pressStart) lastPressWasClick = pressStrayPx <= CLICK_SLOP_PX && performance.now() - pressStart.atMs <= CLICK_MAX_MS
+      pressStart = null
+      pressedAt = null
+      lastAt = null
+    }
     canvas.addEventListener('pointerdown', onPointerDown)
     canvas.addEventListener('pointermove', onPointerMove)
     window.addEventListener('pointerup', onPointerUp)
@@ -551,7 +798,7 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       map.addSource(MISSION_FLOATING_PATH_SOURCE, {
         type: 'geojson',
         ...OVERLAY_3D_SOURCE,
-        data: floatingPathGeoJson(mission, vehicleState, false, viewMetersPerPx(map)),
+        data: floatingPathGeoJson(mission, vehicleState, false, viewMetersPerPx(map), routeWindRef.current),
       })
       map.addLayer({
         id: MISSION_FLOATING_PATH_SOURCE,
@@ -559,7 +806,7 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
         source: MISSION_FLOATING_PATH_SOURCE,
         layout: { visibility: 'none' }, // by camera zoom: syncZoomLayers
         paint: {
-          'fill-extrusion-color': '#9f6fff',
+          'fill-extrusion-color': PATH_COLOR,
           'fill-extrusion-height': ['get', 'top'],
           'fill-extrusion-base': ['get', 'base'],
           'fill-extrusion-opacity': 0.9,
@@ -604,12 +851,12 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
         layout: { 'line-join': 'round', 'line-cap': 'butt' },
         paint: { 'line-color': '#00d4ff', 'line-width': 2.5, 'line-opacity': ['get', 'fade'] },
       })
-      map.addSource(MISSION_PATH_FLAT_SOURCE, { type: 'geojson', data: flatPathGeoJson(mission, vehicleState, false) })
+      map.addSource(MISSION_PATH_FLAT_SOURCE, { type: 'geojson', data: flatPathGeoJson(mission, vehicleState, false, routeWindRef.current) })
       map.addLayer({
         id: MISSION_PATH_FLAT_SOURCE,
         type: 'line',
         source: MISSION_PATH_FLAT_SOURCE,
-        paint: { 'line-color': '#9f6fff', 'line-width': 2, 'line-dasharray': [2, 1.5] },
+        paint: { 'line-color': PATH_COLOR, 'line-width': 2, 'line-dasharray': [2, 1.5] },
       })
       map.addSource(MISSION_LOITER_RINGS_FLAT_SOURCE, {
         type: 'geojson',
@@ -636,6 +883,43 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       // pointed in its actual heading — same fill-extrusion trick, see
       // flightMapGeo.ts. From FLAT_OVERLAY_MAX_ZOOM in only; further out an
       // HTML marker (createAircraftElement) stands in.
+      // Where the gimbal camera is looking: a faint black line from the
+      // aircraft to the terrain (gimbalRay). Added before the aircraft so
+      // the arrow draws over it; flat below FLAT_OVERLAY_MAX_ZOOM.
+      const gimbalLayer = createGimbalRayLayer(GIMBAL_RAY_LAYER, map, {
+        widthPx: GIMBAL_RAY_WIDTH_PX,
+        color: [0, 0, 0],
+        opacity: GIMBAL_RAY_OPACITY,
+        minZoom: FLAT_OVERLAY_MAX_ZOOM,
+      })
+      gimbalLayerRef.current = gimbalLayer
+      map.addLayer(gimbalLayer)
+      map.addLayer(projection)
+      map.addSource(GIMBAL_RAY_FLAT_SOURCE, { type: 'geojson', data: buildGimbalRayLineGeoJson(null, null) })
+      map.addLayer({
+        id: GIMBAL_RAY_FLAT_SOURCE,
+        type: 'line',
+        source: GIMBAL_RAY_FLAT_SOURCE,
+        layout: { 'line-cap': 'round' },
+        paint: { 'line-color': '#000000', 'line-width': GIMBAL_RAY_WIDTH_PX, 'line-opacity': GIMBAL_RAY_OPACITY },
+      })
+      // The locked spot (ADR-0023): a ring on the ground at every zoom.
+      map.addSource(GIMBAL_LOCK_SOURCE, { type: 'geojson', data: buildGimbalLockGeoJson(undefined) })
+      map.addLayer({
+        id: GIMBAL_LOCK_SOURCE,
+        type: 'circle',
+        source: GIMBAL_LOCK_SOURCE,
+        paint: {
+          'circle-radius': 7,
+          'circle-color': 'rgba(0, 0, 0, 0)',
+          'circle-stroke-color': '#000000',
+          'circle-stroke-width': 2.5,
+          'circle-stroke-opacity': 0.7,
+          'circle-pitch-alignment': 'map',
+        },
+      })
+      setGimbalRay(map, gimbalLayer, aircraftPose(vehicleStateRef.current), vehicleStateRef.current?.gimbal)
+
       map.addSource(AIRCRAFT_MARKER_SOURCE, { type: 'geojson', ...OVERLAY_3D_SOURCE, data: aircraftGeoJson(map, vehicleStateRef.current) })
       map.addLayer({
         id: AIRCRAFT_MARKER_SOURCE,
@@ -655,6 +939,7 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
         map.setSourceTileLodParams(BUILDINGS_TILE_LOD.maxZoomLevelsOnScreen, BUILDINGS_TILE_LOD.tileCountMaxMinRatio, BUILDINGS_SOURCE)
       }
       loadedRef.current = true
+      setLoadedMap(map)
     })
 
     // Keep the 3D overlays' on-screen size steady through a zoom gesture
@@ -673,10 +958,15 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       const mission = missionRef.current
       const vehicleState = vehicleStateRef.current
       setSourceData(map, MISSION_WAYPOINT_MARKERS_SOURCE, buildMissionWaypointMarkersGeoJson(mission, pathClearedBeforeIndex(vehicleState), metersPerPx))
-      setSourceData(map, MISSION_FLOATING_PATH_SOURCE, floatingPathGeoJson(mission, vehicleState, lappingLatchRef.current !== null, metersPerPx))
+      setSourceData(
+        map,
+        MISSION_FLOATING_PATH_SOURCE,
+        floatingPathGeoJson(mission, vehicleState, lappingLatchRef.current !== null, metersPerPx, routeWindRef.current),
+      )
       setSourceData(map, MISSION_LOITER_RINGS_SOURCE, buildMissionLoiterRingsGeoJson(mission, pathClearedBeforeIndex(vehicleState), metersPerPx))
       setSourceData(map, TRAIL_SOURCE, buildFloatingTrailGeoJson(trailRef.current, metersPerPx, Date.now()))
       setSourceData(map, AIRCRAFT_MARKER_SOURCE, aircraftGeoJson(map, vehicleState))
+      if (!followingRef.current) setGimbalRay(map, gimbalLayerRef.current, aircraftPose(vehicleState), vehicleState?.gimbal)
     })
 
     return () => {
@@ -688,7 +978,9 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       mapRef.current = null
       homeMarkerRef.current = null
       aircraftMarkerRef.current = null
+      gimbalLayerRef.current = null
       loadedRef.current = false
+      setLoadedMap(null)
       hasCenteredRef.current = false
       trailRef.current = []
     }
@@ -724,15 +1016,15 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       lappingLatchRef.current = { missionId: mission.id, index }
     }
     ;(map.getSource(MISSION_FLOATING_PATH_SOURCE) as GeoJSONSource | undefined)?.setData(
-      floatingPathGeoJson(mission, vehicleState, lappingLatchRef.current !== null, metersPerPx),
+      floatingPathGeoJson(mission, vehicleState, lappingLatchRef.current !== null, metersPerPx, routeWind),
     )
     ;(map.getSource(MISSION_LOITER_RINGS_SOURCE) as GeoJSONSource | undefined)?.setData(
       buildMissionLoiterRingsGeoJson(mission, pathClearedBeforeIndex(vehicleState), metersPerPx),
     )
-    setSourceData(map, MISSION_PATH_FLAT_SOURCE, flatPathGeoJson(mission, vehicleState, lappingLatchRef.current !== null))
+    setSourceData(map, MISSION_PATH_FLAT_SOURCE, flatPathGeoJson(mission, vehicleState, lappingLatchRef.current !== null, routeWind))
     setSourceData(map, MISSION_LOITER_RINGS_FLAT_SOURCE, buildMissionLoiterRingLinesGeoJson(mission, pathClearedBeforeIndex(vehicleState)))
     setSourceData(map, MISSION_WAYPOINTS_FLAT_SOURCE, buildMissionWaypointPointsGeoJson(mission, pathClearedBeforeIndex(vehicleState)))
-  }, [mission, vehicleState])
+  }, [mission, vehicleState, routeWind])
 
   useEffect(() => {
     const map = mapRef.current
@@ -780,6 +1072,7 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       setSourceData(map, TRAIL_FLAT_SOURCE, buildTrailLineGeoJson(trailRef.current, now))
       if (!followingRef.current) {
         ;(map.getSource(AIRCRAFT_MARKER_SOURCE) as GeoJSONSource | undefined)?.setData(aircraftGeoJson(map, vehicleState))
+        setGimbalRay(map, gimbalLayerRef.current, aircraftPose(vehicleState), vehicleState.gimbal)
       }
     }
   }, [vehicleState])
@@ -793,6 +1086,8 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
     const map = mapRef.current
     if (map && loadedRef.current && map.getLayer(AIRCRAFT_MARKER_SOURCE)) {
       map.setPaintProperty(AIRCRAFT_MARKER_SOURCE, 'fill-extrusion-opacity', 0.95 * opacity)
+      gimbalLayerRef.current?.setOpacity(GIMBAL_RAY_OPACITY * opacity)
+      map.setPaintProperty(GIMBAL_RAY_FLAT_SOURCE, 'line-opacity', GIMBAL_RAY_OPACITY * opacity)
     }
   }, [telemetryStale])
 
@@ -801,8 +1096,16 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
   // second; moving only then made the view step. One update behind, smooth.
   useEffect(() => {
     followingRef.current = following
+    followViewRef.current = followView
     const map = mapRef.current
     if (!following || !map) return
+    // Chase view: drags orbit the camera (pointer handlers above), so the
+    // map mustn't pan or rotate under them.
+    const orbiting = followView === 'chase'
+    if (orbiting) {
+      map.dragPan.disable()
+      map.dragRotate.disable()
+    }
     let frame = 0
     let lastFrameMs = performance.now()
     const draw = (frameMs: number) => {
@@ -817,11 +1120,22 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       aircraftMarkerRef.current?.setLngLat(lngLat).setRotation(pose.headingDeg)
       if (loadedRef.current) {
         setSourceData(map, AIRCRAFT_MARKER_SOURCE, buildAircraftMarkerGeoJson(pose, aircraftMarkerScale(map.getZoom(), pose.point.lat)))
+        setGimbalRay(map, gimbalLayerRef.current, pose, vehicleStateRef.current?.gimbal)
       }
-      map.jumpTo({ center: lngLat, ...followCamera(map, followView, cameraHeading, 1 - Math.exp(-dtS / FOLLOW_TURN_TAU_S)) })
+      // The camera follows the direction of travel through a smoothed
+      // bearing, so the orbit offset on top responds straight away.
+      const track = blendBearing(trackBearingRef.current ?? cameraHeading, cameraHeading, 1 - Math.exp(-dtS / FOLLOW_TURN_TAU_S))
+      trackBearingRef.current = track
+      map.jumpTo({ center: lngLat, ...followCamera(map, followView, track, orbitRef.current) })
     }
     frame = requestAnimationFrame(draw)
-    return () => cancelAnimationFrame(frame)
+    return () => {
+      cancelAnimationFrame(frame)
+      if (orbiting) {
+        map.dragPan.enable()
+        map.dragRotate.enable()
+      }
+    }
   }, [following, followView])
 
   // Stopped following: give the view its centre back (chase view shifts it down).
@@ -839,15 +1153,29 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       // Only a remembered preference.
     }
     setFollowing(true)
+    // Each start of following is from straight behind.
+    orbitRef.current = DEFAULT_ORBIT
+    trackBearingRef.current = vehicleState?.attitude.yawDeg ?? null
     if (!map || !vehicleState) return
     followSettlingRef.current = true
     setTimeout(() => (followSettlingRef.current = false), FOLLOW_START_MS)
     map.easeTo({
       center: [vehicleState.position.lon, vehicleState.position.lat],
-      ...followCamera(map, view, vehicleState.attitude.yawDeg, 1),
+      ...followCamera(map, view, vehicleState.attitude.yawDeg, DEFAULT_ORBIT),
       zoom: Math.max(map.getZoom(), FOLLOW_ZOOM),
       duration: FOLLOW_START_MS,
     })
+  }
+
+  /** One overlay at a time; picking the one that's on turns it off. */
+  function toggleWeather(next: Exclude<WeatherOverlay, 'none'>) {
+    const value = weatherOverlay === next ? 'none' : next
+    setWeatherOverlay(value)
+    try {
+      localStorage.setItem(WEATHER_OVERLAY_KEY, value)
+    } catch {
+      // Only a remembered preference.
+    }
   }
 
   function selectBasemap(next: 'street' | 'satellite') {
@@ -859,8 +1187,10 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
   }
 
   /** First click squares the camera up (north-up, straight down); once
-   * already square, the next click fits the whole mission in view: every
-   * item, loiter circles, home and the drone (missionBounds). Checked
+   * already square, the next click fits what's left of the mission in view:
+   * the items still to fly (from the one being flown to), their loiter
+   * circles, the drone, and home if the rest goes there (missionBounds).
+   * Before a mission starts or once it's done, that's the whole mission. Checked
    * against the map's actual current orientation, not a separate counter, so
    * it stays correct even if the user re-tilts by hand in between clicks. */
   function handleRecenter() {
@@ -875,7 +1205,9 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       return
     }
     const drone = vehicleState ? { lat: vehicleState.position.lat, lon: vehicleState.position.lon } : null
-    const bounds = missionBounds(mission, vehicleState?.home ?? null, drone)
+    const cleared = pathClearedBeforeIndex(vehicleState) ?? 0
+    const fromIndex = mission && cleared < mission.items.length ? cleared : 0
+    const bounds = missionBounds(mission, vehicleState?.home ?? null, drone, fromIndex)
     if (!bounds) return
     // Keep the route clear of the overlay panels: the HUD across the top,
     // the progress and mission panels down the left, the command bar along
@@ -897,48 +1229,61 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
           layout (flex-grow, fixed pixels, ...) without re-triggering the
           percentage-height bug that bit the first version of this component. */}
       <div ref={containerRef} className="w-full flex-1" />
+      {loadedMap && windGrid && <WindStreaks map={loadedMap} grid={windGrid} />}
 
-      <div className="glass-panel absolute right-4 top-14 z-10 flex overflow-hidden p-0.5">
-        <button
-          type="button"
-          onClick={() => selectBasemap('street')}
-          aria-pressed={basemap === 'street'}
-          className="hud-label rounded-md px-2.5 py-1 transition"
-          style={basemap === 'street' ? { color: 'var(--primary)', background: 'var(--accent)' } : undefined}
-        >
-          Street
-        </button>
-        <button
-          type="button"
-          onClick={() => selectBasemap('satellite')}
-          aria-pressed={basemap === 'satellite'}
-          className="hud-label rounded-md px-2.5 py-1 transition"
-          style={basemap === 'satellite' ? { color: 'var(--primary)', background: 'var(--accent)' } : undefined}
-        >
-          Satellite
-        </button>
-      </div>
+      {/* Map controls, one column under the top-right bar: the basemap,
+          then the follow view (only while following) so the two toggles line
+          up, then follow, then recenter. The toggles stretch to the same
+          width; the icon buttons sit at the right edge. Hidden in the
+          picture-in-picture tile (showControls). */}
+      <div className={`absolute right-4 top-14 z-10 flex-col items-end gap-1.5 ${showControls ? 'flex' : 'hidden'}`}>
+        <div className="glass-panel flex self-stretch overflow-hidden p-0.5" role="group" aria-label="Basemap">
+          {(['street', 'satellite'] as const).map((style) => (
+            <button
+              key={style}
+              type="button"
+              onClick={() => selectBasemap(style)}
+              aria-pressed={basemap === style}
+              className="hud-label flex-1 rounded-md px-2.5 py-1 transition"
+              style={basemap === style ? { color: 'var(--primary)', background: 'var(--accent)' } : undefined}
+            >
+              {style === 'street' ? 'Street' : 'Satellite'}
+            </button>
+          ))}
+        </div>
 
-      <button
-        type="button"
-        onClick={handleRecenter}
-        aria-label="Square up the camera, then fit the whole mission in view"
-        className="glass-panel absolute right-4 top-24 z-10 flex h-8 w-8 items-center justify-center transition hover:ring-2 hover:ring-primary"
-      >
-        <LocateFixed size={14} style={{ color: 'var(--primary)' }} aria-hidden />
-      </button>
+        {/* Weather overlay (ADR-0026): one at a time, off by picking it again. */}
+        {weatherService && (
+          <div className="glass-panel flex self-stretch overflow-hidden p-0.5" role="group" aria-label="Weather overlay">
+            {(['wind', 'rain'] as const).map((kind) => (
+              <button
+                key={kind}
+                type="button"
+                onClick={() => toggleWeather(kind)}
+                aria-pressed={weatherOverlay === kind}
+                className="hud-label flex-1 rounded-md px-2.5 py-1 transition"
+                style={weatherOverlay === kind ? { color: 'var(--primary)', background: 'var(--accent)' } : undefined}
+              >
+                {kind === 'wind' ? 'Wind' : 'Rain'}
+              </button>
+            ))}
+          </div>
+        )}
+        {/* Under the weather toggles, pushing follow and recenter down. Rain
+            speaks for itself: only wind has a key. */}
+        {weatherOverlay === 'wind' && <WeatherLegend status={weatherStatus} />}
 
-      {/* Follow the drone; while following, pick chase (30° behind) or top-down. */}
-      <div className="absolute right-4 top-[8.25rem] z-10 flex items-center gap-1.5">
+        {/* While following, pick chase (30° behind) or top-down. */}
         {following && (
-          <div className="glass-panel flex overflow-hidden p-0.5" role="group" aria-label="Follow view">
+          <div className="glass-panel flex self-stretch overflow-hidden p-0.5" role="group" aria-label="Follow view">
             {(['chase', 'top'] as const).map((view) => (
               <button
                 key={view}
                 type="button"
                 onClick={() => startFollowing(view)}
                 aria-pressed={followView === view}
-                className="hud-label rounded-md px-2 py-1 transition"
+                title={view === 'chase' ? 'Drag the map to look around the drone' : 'Drag the map to stop following'}
+                className="hud-label flex-1 whitespace-nowrap rounded-md px-2 py-1 transition"
                 style={followView === view ? { color: 'var(--primary)', background: 'var(--accent)' } : undefined}
               >
                 {view === 'chase' ? 'Chase 30°' : 'Top-down'}
@@ -946,6 +1291,7 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
             ))}
           </div>
         )}
+
         <button
           type="button"
           onClick={() => (following ? setFollowing(false) : startFollowing(followView))}
@@ -957,6 +1303,16 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
         >
           <Navigation size={14} style={{ color: 'var(--primary)' }} aria-hidden />
         </button>
+
+        <button
+          type="button"
+          onClick={handleRecenter}
+          aria-label="Square up the camera, then fit the rest of the mission in view"
+          className="glass-panel flex h-8 w-8 items-center justify-center transition hover:ring-2 hover:ring-primary"
+        >
+          <LocateFixed size={14} style={{ color: 'var(--primary)' }} aria-hidden />
+        </button>
+
       </div>
     </div>
   )

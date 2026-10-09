@@ -47,6 +47,15 @@ func (l *Link) Command(ctx context.Context, cmd protocol.Command) protocol.Comma
 	case "video.config":
 		// Agent-local, not MAVLink: the encoder doesn't take presets yet.
 		return protocol.Rejected("video presets aren't implemented in the agent yet")
+	case "gimbal.lock", "gimbal.release":
+		// Camera only, allowed under RC override (ADR-0023). To come:
+		// MAV_CMD_DO_SET_ROI_LOCATION, released with MAV_CMD_DO_SET_ROI_NONE
+		// past the lock range (docs/MAVLINK.md).
+		return protocol.Rejected("gimbal lock isn't implemented in the agent yet")
+	case "freefly.start", "freefly.waypoint", "freefly.remove", "freefly.loiter":
+		// ADR-0024: a rolling AUTO mission, ending in an unlimited loiter
+		// round the last waypoint (docs/MAVLINK.md). To come.
+		return protocol.Rejected("free fly isn't implemented in the agent yet")
 	}
 
 	// Before anything else about a start: the safety pilot's radio is there

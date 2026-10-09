@@ -23,7 +23,14 @@ const TILE_CLASS =
  */
 export interface FlightPiPProps {
   mission?: Mission | null
-  onMapClick?: (point: GeoPoint) => void
+  /** The clicked spot, and the terrain's height there (null without terrain). */
+  onMapClick?: (point: GeoPoint, groundElevationM: number | null) => void
+  /** Given, a double-click calls it instead of zooming (and single clicks
+   * wait a moment to be sure they aren't the start of one). */
+  onMapDoubleClick?: (point: GeoPoint) => void
+  /** Given, mission waypoints are clickable: hovering one shows a pointer,
+   * clicking it reports its index and where on screen, instead of a map click. */
+  onWaypointClick?: (index: number, screen: { x: number; y: number }) => void
   /** Set true to switch the map into the full-size slot (e.g. entering
    * mission planning, where clicks need to land on the map immediately).
    * Only acts on the transition to true — the user's own tile-tap swaps
@@ -31,7 +38,7 @@ export interface FlightPiPProps {
   focusMap?: boolean
 }
 
-export function FlightPiP({ mission = null, onMapClick, focusMap = false }: FlightPiPProps) {
+export function FlightPiP({ mission = null, onMapClick, onMapDoubleClick, onWaypointClick, focusMap = false }: FlightPiPProps) {
   const [focused, setFocused] = useState<Panel>('map')
   // Adjusting state during render (not in an effect) on the focusMap
   // false->true transition, per https://react.dev/learn/you-might-not-need-an-effect.
@@ -53,9 +60,22 @@ export function FlightPiP({ mission = null, onMapClick, focusMap = false }: Flig
   }
 
   return (
-    <div className="absolute inset-0 flex overflow-hidden">
+    // No browser context menu ("Save image as…") or native image drag on the
+    // map canvas or the video: right-drag rotates the map, and clicks and
+    // double-clicks there mean something (gimbal lock, free-fly waypoints).
+    <div
+      className="absolute inset-0 flex overflow-hidden"
+      onContextMenu={(e) => e.preventDefault()}
+      onDragStart={(e) => e.preventDefault()}
+    >
       <Slot panel="map" focused={focused} label="Map" onSwap={swapTo} onKeyDown={handleTileKeyDown}>
-        <FlightMap mission={mission} onMapClick={onMapClick} />
+        <FlightMap
+          mission={mission}
+          onMapClick={onMapClick}
+          onMapDoubleClick={onMapDoubleClick}
+          onWaypointClick={onWaypointClick}
+          showControls={focused === 'map'}
+        />
       </Slot>
       <Slot panel="video" focused={focused} label="Video" onSwap={swapTo} onKeyDown={handleTileKeyDown}>
         <VideoPanel />

@@ -21,6 +21,7 @@ import {
 import { utcMinuteOfDayToLocalTime } from '../mission-planner/missionEdit'
 import { formatDistance, formatDuration } from '../mission-planner/profileFormat'
 import { useNow } from './useNow'
+import { useRouteWind } from './forecastWind'
 
 type Phase = { label: string; color: string }
 
@@ -120,6 +121,8 @@ export function MissionProgressPanel({ mission }: { mission: Mission | null }) {
   // Laps flown of the loiter being circled, advanced once per telemetry
   // update (adjusting state during render: it derives from the new state).
   const [laps, setLaps] = useState<{ seen: VehicleState | null; tracker: LoiterLapTracker }>({ seen: null, tracker: NO_LOITER_LAPS })
+  // Times in the wind the route is flown in (ADR-0026).
+  const wind = useRouteWind()
   if (state && state !== laps.seen) {
     const sameMission = mission !== null && mission.items.length === state.missionProgress.total ? mission : null
     setLaps({
@@ -138,7 +141,7 @@ export function MissionProgressPanel({ mission }: { mission: Mission | null }) {
   const mode = state.flightMode
   const { currentIndex, total } = state.missionProgress
   const known = mission !== null && mission.items.length === total ? mission : null
-  const toHome = home ? returnHomeEstimate(aircraft, home) : null
+  const toHome = home ? returnHomeEstimate(aircraft, home, undefined, wind) : null
 
   const phase = mode === 'RTL' ? RETURNING : mode === 'QLAND' ? LANDING : mode === 'LOITER' || mode === 'QLOITER' ? PAUSED : FLYING
   const offMission = phase === RETURNING || phase === LANDING
@@ -146,7 +149,7 @@ export function MissionProgressPanel({ mission }: { mission: Mission | null }) {
   const circling = laps.tracker.lastBearingDeg !== null
   const remaining =
     !offMission && known && home
-      ? remainingMission(known, currentIndex, aircraft, home, { nowMs: now, lapsDoneAtFirstItem: lapsDone })
+      ? remainingMission(known, currentIndex, aircraft, home, { nowMs: now, lapsDoneAtFirstItem: lapsDone }, undefined, wind)
       : null
   const endsHome = known?.items.at(-1)?.type === 'returnToLaunch'
   const item = known?.items[currentIndex]

@@ -10,6 +10,7 @@ import {
   MenuExtrasContext,
   MissionTranslatorContext,
   TerrainServiceContext,
+  WeatherServiceContext,
   useVehicleStore,
   type AppStores,
 } from './store-hooks'
@@ -39,9 +40,11 @@ export function AppProviders({ children }: { children: ReactNode }) {
     <AppStoresContext.Provider value={stores}>
       <MissionTranslatorContext.Provider value={services.missionTranslator}>
         <TerrainServiceContext.Provider value={services.terrain}>
-          <FlightLogContext.Provider value={flightLog}>
-            <MenuExtras>{children}</MenuExtras>
-          </FlightLogContext.Provider>
+          <WeatherServiceContext.Provider value={services.weather}>
+            <FlightLogContext.Provider value={flightLog}>
+              <MenuExtras>{children}</MenuExtras>
+            </FlightLogContext.Provider>
+          </WeatherServiceContext.Provider>
         </TerrainServiceContext.Provider>
       </MissionTranslatorContext.Provider>
     </AppStoresContext.Provider>

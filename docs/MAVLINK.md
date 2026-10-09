@@ -61,6 +61,12 @@ Validation must check every **leg** and **loiter circle** against the polygon, n
 | `mode.rtl` | Set mode RTL | |
 | `mode.qland` | Set mode QLAND | |
 | `video.config` | none | Agent-local (encoder), not MAVLink. |
+| `gimbal.release` | ❓ `MAV_CMD_DO_SET_ROI_NONE` | ADR-0023. Not in the agent yet. Drops the operator's lock; the gimbal goes back to looking ahead, or at a loiter's centre. |
+| `freefly.start` | ❓ Upload a free-fly mission and stay in (or set) AUTO: one `NAV_LOITER_UNLIM` at the current position, `altM` and 80 m radius, `MISSION_SET_CURRENT` to it | ADR-0024. Not in the agent yet (rejected). Airborne only; a mode change, so hold-to-confirm and refused under RC override. The planned mission is kept by the agent and re-uploaded when free fly ends (RTL, QLAND or landing). |
+| `freefly.waypoint` | ❓ Rewrite the mission's tail: …, the new `NAV_WAYPOINT` (`altM`, relative), then `NAV_LOITER_UNLIM` round it; the previous end circle becomes a plain `NAV_WAYPOINT` (or stays a `NAV_LOITER_TURNS` if it's a loiter waypoint), and if the aircraft was circling it, `MISSION_SET_CURRENT` to the next item | ADR-0024. Not in the agent yet. The whole route stays on the FC: with the link gone it flies out the queued waypoints and circles the last, until the battery failsafe. |
+| `freefly.remove` | ❓ Rewrite the mission without that item; if it was the current one, `MISSION_SET_CURRENT` to the next (or an unlimited loiter where the aircraft is) | Only waypoints not yet reached; the browser sends the position it saw, so an edit to a changed route is refused. |
+| `freefly.loiter` | ❓ Swap the item between `NAV_WAYPOINT` and `NAV_LOITER_TURNS` (1 turn, 80 m) | As above. The last item is circled until another is added either way (`NAV_LOITER_UNLIM`). |
+| `gimbal.lock` | ❓ `MAV_CMD_DO_SET_ROI_LOCATION` (lat, lon, alt AMSL); `MAV_CMD_DO_SET_ROI_NONE` to release | ADR-0023. Not in the agent yet (rejected). Camera only: ArduPlane points the mount, never the aircraft. Allowed under RC override. ArduPilot doesn't release an ROI by distance, so the agent watches the range and sends `ROI_NONE` past 500 m. If the companion dies the lock stays on the FC until the mission or a pilot changes it: display only, no flight effect. |
 
 Never sent, blocked in the agent: `RC_CHANNELS_OVERRIDE`, `MANUAL_CONTROL`, `SET_POSITION_TARGET_*`, `SET_ATTITUDE_TARGET`, `MAV_CMD_DO_REPOSITION` and parameter writes other than the fence ones above.
 
@@ -71,7 +77,7 @@ Never sent, blocked in the agent: `RC_CHANNELS_OVERRIDE`, `MANUAL_CONTROL`, `SET
 | `position` | `GLOBAL_POSITION_INT` (`relative_alt`, `alt`) |
 | `attitude` | `ATTITUDE` |
 | `groundSpeedMps`, `airspeedMps`, `climbMps` | `VFR_HUD` |
-| `battery` | `BATTERY_STATUS` / `SYS_STATUS` |
+| `battery` | `BATTERY_STATUS` / `SYS_STATUS`. `toHomePercent`: ❓ from the battery-return script (ADR-0025), e.g. a `NAMED_VALUE_FLOAT` it sends; omitted until then. |
 | `gps` | `GPS_RAW_INT` |
 | `flightMode`, `armed` | `HEARTBEAT` (`custom_mode` → app `FlightMode` via the ArduPlane mode table; `base_mode` armed flag) |
 | `vtolState`, `landed` | `EXTENDED_SYS_STATE` (`vtol_state`, `landed_state`) |
@@ -81,6 +87,8 @@ Never sent, blocked in the agent: `RC_CHANNELS_OVERRIDE`, `MANUAL_CONTROL`, `SET
 | `failsafe.geofence` | `FENCE_STATUS` |
 | `failsafe.battery`, `failsafe.rc` | `BATTERY_STATUS` / `SYS_STATUS` flags and `STATUSTEXT` ❓ |
 | `failsafe.gcs` | The agent's own view of the commander session |
+| `wind` (optional) | ❓ `WIND` (`direction` is where it blows from, `speed`): ArduPilot's own estimate. Not mapped by the agent yet; the mock reports its simulated wind when one is set (ADR-0026). |
+| `gimbal` (optional) | ❓ Not mapped by the agent yet, so omitted from real telemetry. Plan: `GIMBAL_DEVICE_ATTITUDE_STATUS` (gimbal protocol v2, which ArduPilot sends for SIYI-style mounts): quaternion → `pitchDeg` from the horizon (negative down) and `yawDeg` from the nose; if `GIMBAL_DEVICE_FLAGS_YAW_IN_EARTH_FRAME` is set, subtract the vehicle's yaw first. `gimbal.lock` is the agent's own record of the ROI it set (ADR-0023), and `gimbal.lookAt` the spot it's pointed at: the lock, or the centre of a loiter being circled (a `DO_SET_ROI_LOCATION` the translator puts before each loiter item, cleared after it; not in the translator yet). The mock looks ahead at -45° pitch, at the locked spot, or at the loiter centre. Display only: the map draws the camera's line of sight to the ground from it; nothing in flight depends on it, and if the companion dies the FC keeps driving the mount. |
 | clock (loiter until) | `SYSTEM_TIME` (GPS time) |
 | events | `STATUSTEXT` → `status`, mode changes → `modeChanged` |
 
@@ -105,6 +113,7 @@ The planner's height profile and time estimate model how ArduPlane flies the mis
 
 - Waypoint reached: the mock uses 3D proximity (20 m); ArduPlane uses horizontal distance or passing the waypoint, and starts its turn there. 🧪 With ArduPilot's default `WP_RADIUS` 90 it was "reached" 82 m short, which cut corners visibly. SITL now sets `WP_RADIUS` 30 (`sim/params`), and it's reached at 29 m. The real value is a Phase 3 tuning decision; a per-waypoint `acceptRadiusM` overrides it.
 - Resume after a pause: 🧪 ArduPlane flies **straight from wherever it is to the current target**; it does not rejoin the planned leg (`agent/cmd/sitlcheck -resume`: after being pushed 168 m off, it tracked a straight line to the target). With `pause_resume.lua` it instead rejoins the planned leg (ADR-0020), and the mock does the same. The map never follows the aircraft: the dashed path is always the fixed planned route, trimmed by progress along it, so any gap between it and the aircraft is visible (a UI rule, not a flight one).
+- Height along a leg: the mock now flies ArduPlane's glide slope, the height changing evenly from where the leg started to the next item's (2026-10-10). It used to climb or descend at 3 m/s straight away, which put it well above or below the drawn path for most of a leg. Its 3 m/s climb limit still applies, so a steep leg falls behind the slope.
 - RTL altitude: the mock keeps its current altitude; ArduPlane uses `RTL_ALTITUDE`.
 - Turn radius: the mock uses a fixed turn rate (20°/s); ArduPlane's depends on bank limit (`ROLL_LIMIT_DEG`) and airspeed.
 - Cruise speed: the mock hardcodes 18 m/s; ArduPlane uses `AIRSPEED_CRUISE`. 🧪 SITL's QuadPlane cruises at 25 m/s. At 18 m/s it sits on `Q_ASSIST_SPEED` (18), so VTOL assist keeps cutting in. The real airframe's figure replaces both; until then the mock should move to 25 m/s, which also changes its turn radius and `MIN_LOITER_RADIUS_M`.

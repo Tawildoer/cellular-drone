@@ -2,8 +2,10 @@ import { Radio, ShieldAlert, ShieldCheck, Satellite } from 'lucide-react'
 import { useVehicleStore } from '../../app/store-hooks'
 import { StatTile } from '../../components/StatTile'
 import { batteryIcon, batteryStatus, formatHeadingDeg, gpsFixLabel, gpsStatus, vtolStateLabel } from './hudFormat'
+import { armedRows, altitudeRows, batteryRows, gpsRows, headingRows, linkRows, modeRows, speedRows, vtolRows } from './hudDetails'
 import { formatLinkBadge } from './linkFormat'
 import { LinkStrengthTile } from './LinkStrengthTile'
+import { WindTile } from './WindTile'
 
 export function HudStrip() {
   const vehicleState = useVehicleStore((s) => s.vehicleState)
@@ -21,28 +23,33 @@ export function HudStrip() {
   const link = formatLinkBadge(linkStatus)
 
   return (
-    // A single row in the top bar, each metric its own fixed-width tile:
-    // widths measured in the browser at each one's longest value (e.g. 'No
-    // link', 'QLOITER', '99.9 m/s', '2D fix 99 sats'), so nothing shifts as
-    // values change. Re-measure if a label or format changes.
+    // A single row in the top bar, each metric its own tile, stretched to
+    // share the bar's width. The widths are minimums, measured in the browser
+    // at each one's longest value (e.g. 'No link', 'QLOITER', '99.9 m/s',
+    // '2D fix 99 sats'), so nothing shifts as values change. Re-measure if a
+    // label or format changes.
     // Slightly tighter letter spacing than the HUD default, to fit at 1280 px.
-    <div className="flex min-w-0 items-center gap-[3px] overflow-x-auto [&_.hud-label]:tracking-[0.06em] [&_.hud-value]:tracking-[0.03em]">
-      <StatTile width={121} label="Link" value={link.label} detail={link.detail} icon={Radio} status={link.status} hideLabel />
+    <div className="flex min-w-0 flex-1 items-center gap-[3px] overflow-x-auto [&_.hud-label]:tracking-[0.06em] [&_.hud-value]:tracking-[0.03em]">
+      <StatTile grow width={121} label="Link" value={link.label} detail={link.detail} icon={Radio} status={link.status} hideLabel more={linkRows(linkStatus)} />
       <LinkStrengthTile />
-      <StatTile width={93} label="Flight mode" shortLabel="Mode" value={vehicleState.flightMode} />
+      <StatTile grow width={93} label="Flight mode" shortLabel="Mode" value={vehicleState.flightMode} more={modeRows(vehicleState)} />
       <StatTile
+        grow
         width={89}
         label="Armed"
         value={vehicleState.armed ? 'Armed' : 'Disarmed'}
         icon={vehicleState.armed ? ShieldAlert : ShieldCheck}
         status={vehicleState.armed ? 'warning' : undefined}
         hideLabel
+        more={armedRows(vehicleState)}
       />
-      <StatTile width={78} label="VTOL state" shortLabel="VTOL" value={vtolStateLabel(vehicleState.vtolState)} />
-      <StatTile width={80} label="Altitude AGL" shortLabel="Alt" value={`${Math.round(vehicleState.position.altRelM)} m`} />
-      <StatTile width={95} label="Ground speed" shortLabel="Spd" value={`${vehicleState.groundSpeedMps.toFixed(1)} m/s`} />
-      <StatTile width={65} label="Heading" shortLabel="Hdg" value={formatHeadingDeg(vehicleState.attitude.yawDeg)} />
+      <StatTile grow width={78} label="VTOL state" shortLabel="VTOL" value={vtolStateLabel(vehicleState.vtolState)} more={vtolRows(vehicleState)} />
+      <StatTile grow width={80} label="Altitude AGL" shortLabel="Alt" value={`${Math.round(vehicleState.position.altRelM)} m`} more={altitudeRows(vehicleState)} />
+      <StatTile grow width={95} label="Ground speed" shortLabel="Spd" value={`${vehicleState.groundSpeedMps.toFixed(1)} m/s`} more={speedRows(vehicleState)} />
+      <WindTile />
+      <StatTile grow width={65} label="Heading" shortLabel="Hdg" value={formatHeadingDeg(vehicleState.attitude.yawDeg)} more={headingRows(vehicleState)} />
       <StatTile
+        grow
         width={98}
         label="Battery"
         value={`${Math.round(vehicleState.battery.percent)}%`}
@@ -50,8 +57,10 @@ export function HudStrip() {
         icon={BatteryIcon}
         status={batteryStatus(vehicleState.battery.percent)}
         hideLabel
+        more={batteryRows(vehicleState)}
       />
       <StatTile
+        grow
         width={119}
         label="GPS"
         value={gpsFixLabel(vehicleState.gps.fixType)}
@@ -59,6 +68,7 @@ export function HudStrip() {
         icon={Satellite}
         status={gpsStatus(vehicleState.gps.fixType)}
         hideLabel
+        more={gpsRows(vehicleState)}
       />
     </div>
   )

@@ -35,6 +35,7 @@ Order: **frontend first against a mock vehicle**, then the real backend undernea
 - [x] UI: preflight checklist gate + command bar with hold-to-confirm (arm, start, RTL, QLAND)
 - [x] UI: flight log (each flight's stats, kept in the browser), follow-drone camera (chase 30° or top-down), progress panel only during a mission (2026-10-09)
 - [x] UI: operator awareness: mission progress (item, distance, time left), way home, failsafe banners, stale-telemetry warning with the aircraft faded on the map, commands that show pending/accepted and say why they're disabled (2026-10-09)
+- [x] UI: gimbal line of sight and click-to-lock, free fly from the map, battery return and warnings, weather overlays with wind-aware estimates (ADR-0023 to ADR-0026, 2026-10-10; mock only)
 - [ ] Dev panel for MockLink fault injection
 - [ ] Playwright smoke: login → plan → upload → arm → start → pause/resume → RTL
 - [ ] Check it on Chrome desktop (laptop, primary target now). Chrome Android / iOS Safari (phone layout) deferred — same components, verify later.
@@ -57,6 +58,8 @@ Do this before new planner features (ADR-0017). Mapping reference: `docs/MAVLINK
   - [x] GCS heartbeat only while a commander session is alive. Informational since ADR-0020 (`FS_GCS_ENABL 0`): no failsafe depends on it. (Any session with an open control channel counts; one-commander rule still to do)
   - [x] RC-override awareness: report RC link and mode-switch state; refuse browser mode changes while RC holds a manual mode. (2026-10-08: switch position read via `FLTMODE_CH`, reported as `rc.modeSwitch`; off AUTO while armed is an override; start needs RC linked + switch at AUTO. Proven in SITL with `cmd/sitlpilot -switch`. Still open: a LOITER-switch test that a pilot's loiter isn't time-limited, ADR-0020)
   - [ ] Video track: test pattern in SITL mode
+  - [ ] Gimbal lock and release (`DO_SET_ROI_LOCATION` / `ROI_NONE`, release past 500 m), gimbal attitude and `WIND` into telemetry, free fly as a rolling mission (ADR-0023, -0024, -0026)
+  - [ ] `battery_rtl.lua`: return home when the battery is down to the trip home plus the reserve, proven in SITL (ADR-0025)
   - [x] Local command and flight log (JSONL): `internal/flightlog`, `-flight-log-dir`; sessions, commands, uploads, FC events, state samples (2026-10-08). Upload to the server is Phase 1c
   - [ ] WSS client to signalling with a per-drone key; verify the Ed25519 session token before answering an offer
 - [ ] Generate JSON Schema from the zod `protocol/` definitions; Go types generated from it or hand-mirrored with tests

@@ -210,3 +210,60 @@ Raw ICE detail lives in the agent's JSONL log and the browser console (`[WebRtcL
 - A real aircraft can't be commanded through an unauthenticated server by accident: it takes a deliberate flag.
 - When Phase 1c lands, `verifySessionToken` checks the Ed25519 signature and the flag goes away.
 
+## ADR-0023: Gimbal lock-on from a map click, released past 500 m (2026-10-10, accepted)
+**Context:** The gimbal camera is the point of the aircraft (ADR-0018 left browser gimbal control to its own ADR). The operator wants to click a spot on the map and have the camera stay on it as the aircraft flies its mission. A 2-axis (pitch/roll) gimbal can't do that for a spot off to the side.
+**Decision:**
+- **The gimbal can point anywhere in the hemisphere under the aircraft** (pan all the way round, tilt from level to straight down). This amends ADR-0018's "2-axis": the gimbal needs yaw, as SIYI A8 mini-class units have. Choose the hardware to match.
+- **New command `gimbal.lock { target: lat, lon, altAmslM }`**, sent when the operator clicks the map outside planning. The browser sends the terrain height at the clicked spot. On the vehicle it's `MAV_CMD_DO_SET_ROI_LOCATION` (docs/MAVLINK.md).
+- **Range 500 m** ground distance from the aircraft (`GIMBAL_LOCK_RANGE_M`). The browser refuses a click further away and says why; the vehicle checks it too.
+- **The vehicle releases the lock** once the aircraft is more than 500 m away (`MAV_CMD_DO_SET_ROI_NONE`), so it holds with the browser closed. It **stays released** if the aircraft comes back: clicking again re-locks.
+- **Camera only, so it's allowed while the RC pilot has control**, like `video.config`. It never moves the aircraft: ArduPlane's ROI points the mount, not the airframe. No confirmation step, unlike arm, start and mode changes.
+- Telemetry reports the lock target in `gimbal.lock`. The map draws the line of sight ending on it and marks it with a ring.
+**Consequences:**
+- The agent rejects `gimbal.lock` until it's implemented; the mock does it now.
+- If the companion computer dies while locked, the FC keeps the ROI with no range release. That's display only: no flight behaviour depends on it.
+- `gimbal.release` (a Release button on the "Gimbal locked" chip) drops the lock by hand (added 2026-10-10). Still open: clearing it when a mission ends.
+
+## ADR-0024: Free fly as a rolling mission; loiters watch their centre (2026-10-10, accepted)
+**Context:** The operator wants to fly the drone without planning a mission: double-click the map to send it somewhere, at a fixed height, and have it wait at the last spot when there's nowhere left to go. The browser may not send "fly to here" commands (`MAV_CMD_DO_REPOSITION` and GUIDED are on the agent's never-send list), and the FC must hold whatever the aircraft does next if the link drops (ADR-0020).
+**Decision:**
+- **Free fly is a rolling AUTO mission held on the FC**, not GUIDED. `freefly.start { altM }` replaces the vehicle's mission with a circle where the aircraft is; each `freefly.waypoint { lat, lon }` adds a waypoint at `altM` to the end, and the circle moves to it. Mapping in docs/MAVLINK.md.
+- **At the end of the route it circles the last waypoint** (80 m, `NAV_LOITER_UNLIM`, fixed-wing) until another waypoint is added, and free fly starts by circling where the aircraft is. Changed the same day from a VTOL hover, which drains a QuadPlane far faster. It's a mission item, so the FC stays in AUTO: a browser-commanded LOITER would be a pause, which `pause_resume.lua` resumes after 120 s (ADR-0020), and would need the agent alive.
+- **Clicking a waypoint not yet reached** opens a menu: make it a loiter (one 80 m lap, `NAV_LOITER_TURNS`) or a plain waypoint again, or delete it (`freefly.remove`, `freefly.loiter`). Commands carry the waypoint's position as the browser saw it, and the vehicle refuses them if the route has changed.
+- **Airborne only.** Takeoff stays with Start mission and its preflight gate. Entering free fly is a mode change: hold-to-confirm in the UI and refused under RC override. Adding a waypoint is not confirmed (it's the whole point of the mode) but is refused under RC override too.
+- **It ends with RTL, QLAND or landing.** The vehicle then puts the planned mission back.
+- **Height `FREE_FLY_ALT_M` = 60 m above home**, the same for every free-fly waypoint.
+- **Map gestures in free fly:** a single click locks the gimbal (ADR-0023), a double-click adds a waypoint. Double-click zoom is off meanwhile, and a single click waits 250 ms to be sure it isn't half a double-click.
+- **Loiters watch their centre:** while circling a mission loiter, the gimbal points at the loiter's centre (on the FC, an ROI set before the loiter item and cleared after). An operator's lock takes priority. Telemetry's `gimbal.lookAt` says where it's pointed for either reason.
+**Consequences:**
+- With the link down the aircraft flies out the waypoints already sent, then circles the last until the battery failsafe acts.
+- No fence check on free-fly waypoints in the browser yet; the FC's fence still applies.
+- The agent rejects both commands until it implements them; the mock flies them now.
+
+## ADR-0025: The aircraft returns home by itself when its battery is down to what the trip home needs (2026-10-10, accepted; FC script to build and prove in SITL)
+**Context:** A fixed battery-percentage failsafe is either too early on a short flight or too late on a long one. The operator wants the aircraft to come home when the battery estimate says it has to, wherever it is and whatever it's doing, including in free fly (ADR-0024) and with the link down.
+**Decision:**
+- **The vehicle decides, not the browser:** with the link gone it still has to happen. While flying, it estimates the time to fly home and land (`returnHomeEstimate`: straight home at RTL altitude, then the VTOL landing), multiplies it by the drain rate it has measured (smoothed over ~30 s), and adds a **15 % reserve** (`BATTERY_RETURN_RESERVE_PCT`). At or below that, it switches to **RTL** and says why (`STATUSTEXT`).
+- Not while already returning or landing, and **not while the RC pilot has control** (ADR-0008): it's their call. The battery failsafe on the FC still acts as the backstop.
+- Telemetry reports the figure (`battery.toHomePercent`); the battery drawer shows it, amber within 10 % and red at it.
+- **On the FC it's a Lua script** (`sim/scripts/battery_rtl.lua`, alongside `loiter_until.lua`), reading `battery:capacity_remaining_pct` and the drain over time, home distance from `ahrs`, and setting RTL. Not written yet: build it and prove it in SITL before relying on it. Until then only the mock does this.
+**Consequences:**
+- Free fly ends with the return, and a pause doesn't hold the aircraft past it.
+- The estimate assumes still air and the measured drain: a strong headwind home makes it optimistic, which the reserve has to absorb. Wind-aware estimates are a later refinement.
+- The fixed `BATT_LOW_*` / `BATT_CRT_*` failsafe stays configured as the last line.
+**Addendum (2026-10-10): warnings before it comes to that.** The planner shows the battery a mission needs (flight time from the planner's estimate, plus the trip home if it doesn't end there or in a landing, plus the reserve), at a planning drain of 100 % over `enduranceS` (2000 s, the mock's figure, to be replaced by the airframe's), against the drone's charge (a full battery if not connected): amber if it won't make it on this charge, red if not even on a full one. Free fly shows the same for the route still to fly plus the trip home. In flight, a screen-filling warning asks the operator to turn round once the spare is under 10 %; RTL from it is hold-to-confirm, and "Keep flying" asks again after another 5 %.
+
+## ADR-0026: Weather overlays on the map from free public sources (2026-10-10, accepted)
+**Context:** Wind matters to a small QuadPlane (it cruises at 25 m/s; a 10 m/s wind is a large share of that) and rain matters to the camera and the airframe. The operator wants to see them on the map, picked as an overlay.
+**Decision:**
+- **One weather overlay at a time**, picked from the map's controls (Wind / Rain, again to turn off; remembered in the browser). Drawn under the route and aircraft, with a legend saying what it is, where it's from and for when.
+- **Wind: Open-Meteo** (forecast models, free, no key). Sampled on an 8-column grid over the view (and a little past it) at **80 m** (its nearest height to our 60 m flying height), hourly, plus 10 m gusts. Drawn as **moving streaks**, Windy-style: short translucent lines drifting with the wind through the grid (interpolated between samples), faster and warmer the stronger it is: white under 5 m/s, amber 5–10, red over 10 (`WIND_MODERATE_MPS`, `WIND_STRONG_MPS`). Each streak's tail is kept on the ground and projected every frame, so it holds as the map moves. On a canvas over the map, so above the route: kept thin and translucent. A still picture with reduced motion. Fetched again when the view settles, and every 10 minutes. (Replaced flat arrows the same day.)
+- **Wind at the drone:** a Wind tile in the top bar: the aircraft's own estimate when telemetry carries one (`wind`, from ArduPilot's `WIND`), otherwise the forecast where it is, said which in its drawer with gusts and the headwind on its nose.
+- **The route is tinted by its wind**, one wind for the whole route (measured, else the forecast near the drone or the route): green with a tailwind of 3 m/s or more, amber into 3 m/s or more, red into 7 or more (`legWindTint`). **The estimates use it too:** each leg and loiter lap is timed at its ground speed (crabbing into the crosswind, `groundSpeedMps`), so the progress panel's times, the planner's and free fly's battery figures and the mock's battery return all allow for the wind. The FC script for the battery return (ADR-0025) should use the FC's own wind estimate the same way.
+- **Rain: RainViewer** radar, the latest frame as raster tiles, refreshed every 10 minutes. Its free tiles stop at **zoom 7** (deeper zooms return a "Zoom Level Not Supported" image), so the map enlarges zoom-7 tiles: coarse up close.
+- Behind a `WeatherService` interface (services/), wired in app/config like terrain, so the sources can be swapped (e.g. MapTiler Weather, or a paid feed) without touching the UI.
+- **The browser asks these services directly with the map's area.** Nothing about the drone is sent, but a third party sees roughly where the operator is looking. No API key is involved.
+**Consequences:**
+- Forecast wind, not measured: it's a model at 80 m on a grid of a few km, and won't show local gusts or terrain effects. Where the aircraft reports its own estimate, that's used instead for the tile, the tint and the estimates.
+- One wind for a whole route is a simplification: fine across a few km, less so over a long mission.
+- Open-Meteo's free tier is for non-commercial use, with a daily request limit; fine for a hobby console, revisit if that changes.

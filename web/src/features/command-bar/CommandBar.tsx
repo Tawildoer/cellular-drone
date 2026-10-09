@@ -12,11 +12,17 @@ const COMMAND_LABEL: Record<Command['type'], string> = {
   'mode.resume': 'Resume',
   'mode.rtl': 'RTL',
   'mode.qland': 'QLAND',
+  'gimbal.lock': 'Gimbal lock',
+  'gimbal.release': 'Gimbal release',
+  'freefly.start': 'Free fly',
+  'freefly.waypoint': 'Free-fly waypoint',
+  'freefly.remove': 'Remove waypoint',
+  'freefly.loiter': 'Loiter',
   'video.config': 'Video settings',
 }
 
 /** Each command is a tile, like the top bar's metrics. */
-const TILE = 'h-8 whitespace-nowrap rounded-lg bg-secondary px-3 hover:bg-white/10'
+const TILE = 'h-8 whitespace-nowrap rounded-lg bg-secondary glass-tile px-3'
 
 /** How long "accepted" stays up after a command goes through. */
 const ACCEPTED_MS = 3_000
@@ -54,7 +60,7 @@ export function CommandBar({ mission }: { mission: Mission | null }) {
 
   if (!vehicleState) {
     return (
-      <div className="flex h-8 items-center rounded-lg bg-secondary px-3">
+      <div className="flex h-8 items-center rounded-lg bg-secondary glass-tile px-3">
         <span className="hud-label">Commands — waiting for telemetry…</span>
       </div>
     )

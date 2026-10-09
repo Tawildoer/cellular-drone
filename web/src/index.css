@@ -92,17 +92,144 @@
 }
 
 @layer components {
-  /* Frosted glass panel chrome — link badge, event log, command bar, dev panel. */
+  /* Liquid glass: the chrome of every panel and bar over the map. A thin
+   * dark tint over a dimmed, lightly blurred backdrop, so the map stays
+   * readable through it; a top sheen and a rim that catches light along the
+   * top. Lit top-down only, so it stays even from left to right however wide
+   * the panel is. Positioned so the sheen and rim can cover it (Tailwind's
+   * absolute/fixed utilities still win where a panel sets them). */
   .glass-panel {
-    background: var(--glass-bg);
-    border: 1px solid var(--glass-border);
+    position: relative;
+    isolation: isolate;
+    background: linear-gradient(180deg, rgba(6, 7, 12, 0.12) 0%, rgba(4, 4, 8, 0.18) 100%);
+    border: 1px solid transparent;
     border-radius: var(--panel-radius);
-    backdrop-filter: blur(24px) saturate(1.4);
-    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    backdrop-filter: blur(2px) saturate(1.5) brightness(0.52);
+    -webkit-backdrop-filter: blur(2px) saturate(1.5) brightness(0.52);
     box-shadow:
-      0 8px 32px rgba(0, 0, 0, 0.5),
-      0 0 0 1px rgba(255, 255, 255, 0.03) inset,
-      0 1px 0 rgba(255, 255, 255, 0.06) inset;
+      0 10px 36px rgba(0, 0, 0, 0.45),
+      0 2px 6px rgba(0, 0, 0, 0.25),
+      inset 0 1px 1px rgba(255, 255, 255, 0.22),
+      inset 0 -1px 1px rgba(255, 255, 255, 0.05);
+  }
+
+  /* The sheen: a soft highlight over the top half, like light on a lens. */
+  .glass-panel::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 55%);
+  }
+
+  /* The rim: a 1px gradient border, bright along the top edge. */
+  .glass-panel::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.06) 60%, rgba(255, 255, 255, 0.12) 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+
+  /* A top-bar tile's hover drawer: grows down out of the bar, its bottom
+   * edge sweeping down while the glass and rim stay put, then the readings
+   * settle in just behind it. Shrinks back up the same way on close. */
+  .hover-drawer {
+    animation: hover-drawer-grow 280ms cubic-bezier(0.2, 0.9, 0.25, 1) both;
+  }
+
+  .hover-drawer > * {
+    animation: hover-drawer-content 240ms ease-out 80ms both;
+  }
+
+  .hover-drawer[data-state='closing'] {
+    animation: hover-drawer-shrink 180ms cubic-bezier(0.4, 0, 1, 1) both;
+  }
+
+  .hover-drawer[data-state='closing'] > * {
+    animation: hover-drawer-content-out 100ms ease-in both;
+  }
+
+  @keyframes hover-drawer-grow {
+    from {
+      clip-path: inset(0 0 calc(100% - 6px) 0 round var(--panel-radius));
+    }
+    to {
+      clip-path: inset(0 0 0 0 round var(--panel-radius));
+    }
+  }
+
+  @keyframes hover-drawer-shrink {
+    from {
+      clip-path: inset(0 0 0 0 round var(--panel-radius));
+    }
+    to {
+      clip-path: inset(0 0 calc(100% - 6px) 0 round var(--panel-radius));
+      opacity: 0;
+    }
+  }
+
+  @keyframes hover-drawer-content {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes hover-drawer-content-out {
+    to {
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hover-drawer,
+    .hover-drawer > *,
+    .hover-drawer[data-state='closing'],
+    .hover-drawer[data-state='closing'] > * {
+      animation: none;
+    }
+  }
+
+  /* The battery-return warning (BatteryReturnWarning): a red edge that
+   * pulses so it can't be mistaken for any other panel, and a solid red
+   * hold-to-return button. Pulse off for reduced motion. */
+  .battery-return-warning {
+    box-shadow:
+      0 0 0 2px var(--status-critical),
+      0 10px 40px rgba(0, 0, 0, 0.6);
+    animation: battery-return-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes battery-return-pulse {
+    50% {
+      box-shadow:
+        0 0 0 2px var(--status-critical),
+        0 0 36px 6px color-mix(in srgb, var(--status-critical) 55%, transparent),
+        0 10px 40px rgba(0, 0, 0, 0.6);
+    }
+  }
+
+  .battery-return-button {
+    background: color-mix(in srgb, var(--status-critical) 70%, black);
+    border: 1px solid color-mix(in srgb, var(--status-critical) 80%, white);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .battery-return-warning {
+      animation: none;
+    }
   }
 
   /* Small uppercase mono readouts for live telemetry (HUD strip, link badge). */
@@ -120,5 +247,22 @@
     letter-spacing: 0.08em;
     color: var(--primary);
     text-shadow: 0 0 8px var(--accent-glow);
+  }
+}
+
+/* Tiles on a glass panel (metrics, bar buttons, commands): a light
+ * translucent tint instead of the solid --secondary, so they read as glass on
+ * glass. In the utilities layer so it outranks Tailwind's bg-secondary on
+ * specificity. */
+@layer utilities {
+  .glass-panel .glass-tile {
+    background: linear-gradient(180deg, rgba(190, 215, 255, 0.13) 0%, rgba(190, 215, 255, 0.07) 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.14),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  }
+
+  .glass-panel button.glass-tile:hover:not(:disabled) {
+    background: linear-gradient(180deg, rgba(190, 215, 255, 0.22) 0%, rgba(190, 215, 255, 0.13) 100%);
   }
 }

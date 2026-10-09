@@ -1,4 +1,5 @@
-import { bearingDeg, fromLocalEastNorthM, haversineDistanceM } from '../../domain/geo'
+import { alongTrackFraction, bearingDeg, fromLocalEastNorthM, haversineDistanceM } from '../../domain/geo'
+import { FREE_FLY_LOITER_RADIUS_M } from '../../domain/command'
 import { itemPosition, resolveLoiterUntilMs, type GeoPoint, type Mission } from '../../domain/mission'
 import type { HomePosition, Position, VtolState } from '../../domain/vehicle'
 import {
@@ -61,6 +62,11 @@ export interface SimState {
    * fold altitude into the "cleared" check so a waypoint only counts as
    * reached once the aircraft is genuinely close in 3D, not just overhead. */
   targetAltM: number | null
+  /** The height the current leg started at. ArduPlane flies a glide slope:
+   * the height changes evenly along the leg from this to targetAltM, rather
+   * than climbing or descending straight away (docs/MAVLINK.md). Null:
+   * straight for targetAltM. */
+  legStartAltM: number | null
   headingDeg: number
   groundSpeedMps: number
   batteryPercent: number
@@ -80,6 +86,9 @@ export interface SimState {
   /** Clock mode: when lapping may stop (sim clock, epoch ms) — null in laps mode. */
   loiterUntilMs: number | null
   takeoffAltM: number
+  /** Running out of mission items circles the last one until more are
+   * added, instead of landing in place (free fly, ADR-0024). */
+  circleAtEnd: boolean
   /** The drone's clock (epoch ms) — the real wall clock on the live drone,
    * like a real one's GPS time; see stepSim. */
   clockMs: number
@@ -127,6 +136,7 @@ export function initialSimState(home: HomePosition, clockMs = Date.now()): SimSt
     target: null,
     legStart: null,
     targetAltM: null,
+    legStartAltM: null,
     headingDeg: 0,
     groundSpeedMps: 0,
     batteryPercent: 100,
@@ -139,6 +149,7 @@ export function initialSimState(home: HomePosition, clockMs = Date.now()): SimSt
     loiterTargetDeg: 0,
     loiterUntilMs: null,
     takeoffAltM: 0,
+    circleAtEnd: false,
     clockMs,
   }
 }
@@ -203,6 +214,25 @@ export function startQland(state: SimState): SimState {
   return { ...state, phase: 'qland', target: null, groundSpeedMps: 0 }
 }
 
+/** Circle `center` at `altM` until there's somewhere else to go: the end of
+ * a free-fly route (with circleAtEnd set, the loiter phase never runs out). */
+export function startCircle(state: SimState, center: GeoPoint, altM: number, radiusM: number): SimState {
+  return {
+    ...state,
+    phase: 'loiter',
+    target: null,
+    legStart: null,
+    targetAltM: altM,
+    loiterCenter: center,
+    loiterRadiusM: radiusM,
+    loiterSweptDeg: 0,
+    loiterTargetDeg: 360,
+    loiterUntilMs: null,
+    groundSpeedMps: CRUISE_SPEED_MPS,
+    extending: false,
+  }
+}
+
 export function setPaused(state: SimState, paused: boolean): SimState {
   return { ...state, paused }
 }
@@ -211,7 +241,13 @@ function advanceMissionItem(state: SimState, mission: Mission): SimState {
   const nextIndex = state.missionIndex + 1
   const item = mission.items[nextIndex]
 
-  if (!item) return { ...state, phase: 'landed', target: null, groundSpeedMps: 0 }
+  if (!item) {
+    if (!state.circleAtEnd) return { ...state, phase: 'landed', target: null, groundSpeedMps: 0 }
+    const last = mission.items[state.missionIndex]
+    const at = (last ? itemPosition(last) : null) ?? state.position
+    const radiusM = last?.type === 'loiter' ? last.radiusM : FREE_FLY_LOITER_RADIUS_M
+    return startCircle(state, { lat: at.lat, lon: at.lon }, state.targetAltM ?? state.position.altRelM, radiusM)
+  }
 
   // The leg about to start is the prescribed line from the item just
   // completed to the next one — not wherever the aircraft's actual
@@ -243,6 +279,7 @@ function advanceMissionItem(state: SimState, mission: Mission): SimState {
         target: { lat: item.lat, lon: item.lon },
         legStart,
         targetAltM: item.type === 'vtolLand' ? 0 : item.altM,
+        legStartAltM: state.position.altRelM,
         groundSpeedMps: CRUISE_SPEED_MPS,
         extending: false,
       }
@@ -376,9 +413,22 @@ function stepFlight(state: SimState, mission: Mission | null, dtS: number, physi
       // "cleared" (below) is a genuine 3D check rather than just overhead —
       // without this an item below/above the current altitude would never
       // actually be reachable in Z, and the aircraft would circle forever.
+      // Along a glide slope, as ArduPlane does: the height aimed for moves
+      // evenly from the leg's start height to the item's as the aircraft
+      // gets along the leg (still no faster than the climb rate).
+      const glideFraction =
+        state.legStart && state.legStartAltM !== null
+          ? Math.min(1, Math.max(0, alongTrackFraction(horizontalPosition, state.legStart, state.target)))
+          : 1
+      const desiredAltM =
+        state.targetAltM === null
+          ? null
+          : state.legStartAltM === null
+            ? state.targetAltM
+            : state.legStartAltM + (state.targetAltM - state.legStartAltM) * glideFraction
       const altRelM =
-        state.targetAltM !== null
-          ? stepToward1D(horizontalPosition.altRelM, state.targetAltM, CRUISE_VERTICAL_RATE_MPS * dtS)
+        desiredAltM !== null
+          ? stepToward1D(horizontalPosition.altRelM, desiredAltM, CRUISE_VERTICAL_RATE_MPS * dtS)
           : horizontalPosition.altRelM
       const position: Position = { ...horizontalPosition, altRelM }
       const verticalRemainingM = state.targetAltM !== null ? Math.abs(altRelM - state.targetAltM) : 0
@@ -483,6 +533,11 @@ function stepFlight(state: SimState, mission: Mission | null, dtS: number, physi
       if (loiterSweptDeg < state.loiterTargetDeg) return next
 
       const nextItem = mission.items[state.missionIndex + 1]
+      // The end of a free-fly route: circle until a waypoint is added
+      // after it (ADR-0024).
+      if (!nextItem && state.circleAtEnd) {
+        return { ...next, loiterTargetDeg: Math.max(state.loiterTargetDeg, loiterSweptDeg) }
+      }
       const nextTarget = nextItem ? (itemPosition(nextItem) ?? (nextItem.type === 'returnToLaunch' ? state.home : null)) : null
       if (!nextTarget) return advanceMissionItem(next, mission)
 
