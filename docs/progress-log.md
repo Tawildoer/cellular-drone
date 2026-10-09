@@ -7,6 +7,8 @@ What each working session delivered, newest first. Commit hashes link to the cha
 - **Flight progress panel**: the item being flown and how far it is (or the climb for a takeoff), time and distance left in the mission, and the way home, at the planner's ArduPlane figures. It only estimates for the mission the vehicle reports flying.
 - **Banners** for flight-controller failsafes (battery and geofence as alarms; RC loss as a warning, since in AUTO the mission continues) and for **stale telemetry**: after 3 s without an update the screen says it's showing the last known state, and the aircraft fades on the map. Telemetry age is timed by the browser's clock, so a drone clock that's off can't hide it.
 - **Command bar feedback**: commands show "Sending…" then "accepted" or the reason they failed; hovering a disabled button says why (preflight items, "Arm first", "Already flying", "On the ground"). Start is now disabled in the air, as `mission.start` is a ground command.
+- **Progress panel redesign**: mission name with a state chip, one progress segment per item (the current one filling along its leg), the item being flown with its icon, and big figures for time and distance left and to home.
+- **The repository is public** under Apache-2.0, with this site on GitHub Pages and private vulnerability reporting on. The GitHub repo was recreated so no pre-rewrite commit stays reachable.
 - **Fixed: the demo drone's route wasn't shown** (since 2026-10-06): the mock announced "connected" before loading its mission, so the app's download found nothing. Now loaded first, with a regression test.
 
 ## 2026-10-08: SITL end to end, planner terrain tools, RC switch
