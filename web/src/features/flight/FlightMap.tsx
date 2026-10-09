@@ -9,7 +9,7 @@ import {
 import 'maplibre-gl/dist/maplibre-gl.css'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import type { Feature, Polygon } from 'geojson'
-import { LocateFixed } from 'lucide-react'
+import { LocateFixed, Navigation } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useVehicleStore } from '../../app/store-hooks'
 import { useTelemetryStale } from './telemetryAge'
@@ -341,6 +341,40 @@ function aircraftGeoJson(map: MaplibreMap, vehicleState: VehicleState | null) {
   return buildAircraftMarkerGeoJson(pose, pose ? aircraftMarkerScale(map.getZoom(), pose.point.lat) : 1)
 }
 
+/** Follow-drone camera: a third-person chase view along the heading, 30°
+ * above the horizon, or straight down (north up). */
+type FollowView = 'chase' | 'top'
+const FOLLOW_VIEW_KEY = 'cellular-drone:follow-view'
+/** MapLibre's pitch is measured from straight down: 60 is 30° above the horizon. */
+const CHASE_PITCH = 60
+/** Zoom to fly in to when following starts from further out. */
+const FOLLOW_ZOOM = 16.5
+const FOLLOW_START_MS = 700
+/** How much of the way to the aircraft's heading the chase camera turns each
+ * update: smooths the heading's wobble without lagging a real turn. */
+const CHASE_BEARING_SMOOTHING = 0.25
+/** In chase view the aircraft sits this far down the screen (as top padding),
+ * so more of what's ahead is in view. */
+const CHASE_TOP_PADDING = 0.35
+/** A press that moves this far is a drag: it takes the camera back. */
+const DRAG_TAKEOVER_PX = 5
+
+function readFollowView(): FollowView {
+  try {
+    return localStorage.getItem(FOLLOW_VIEW_KEY) === 'top' ? 'top' : 'chase'
+  } catch {
+    return 'chase'
+  }
+}
+
+function followCamera(map: MaplibreMap, view: FollowView, state: VehicleState, smoothBearing: boolean) {
+  const padding = { top: view === 'chase' ? map.getContainer().clientHeight * CHASE_TOP_PADDING : 0, bottom: 0, left: 0, right: 0 }
+  if (view === 'top') return { bearing: 0, pitch: 0, padding }
+  const current = map.getBearing()
+  const turn = ((state.attitude.yawDeg - current + 540) % 360) - 180
+  return { bearing: smoothBearing ? current + turn * CHASE_BEARING_SMOOTHING : state.attitude.yawDeg, pitch: CHASE_PITCH, padding }
+}
+
 export interface FlightMapProps {
   mission?: Mission | null
   /** Opt-in only — when provided, clicking the map reports the clicked
@@ -359,6 +393,10 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
   const loadedRef = useRef(false)
   const lappingLatchRef = useRef<{ missionId: string; index: number } | null>(null)
   const [basemap, setBasemap] = useState<'street' | 'satellite'>('street')
+  const [following, setFollowing] = useState(false)
+  const [followView, setFollowView] = useState<FollowView>(readFollowView)
+  /** While following starts, its fly-in isn't cut short by telemetry updates. */
+  const followSettlingRef = useRef(false)
 
   const vehicleState = useVehicleStore((s) => s.vehicleState)
   const telemetryStale = useTelemetryStale()
@@ -417,6 +455,23 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
     map.on('click', (e) => {
       onMapClickRef.current?.({ lat: e.lngLat.lat, lon: e.lngLat.lng })
     })
+
+    // Dragging the map by hand takes the camera back: stop following. Read
+    // from the pointer itself, because the follow camera's own moves on each
+    // update would cancel a drag before MapLibre reported one.
+    const canvas = map.getCanvasContainer()
+    let pressedAt: { x: number; y: number } | null = null
+    const onPointerDown = (e: PointerEvent) => (pressedAt = { x: e.clientX, y: e.clientY })
+    const onPointerMove = (e: PointerEvent) => {
+      if (pressedAt && Math.hypot(e.clientX - pressedAt.x, e.clientY - pressedAt.y) > DRAG_TAKEOVER_PX) {
+        pressedAt = null
+        setFollowing(false)
+      }
+    }
+    const onPointerUp = () => (pressedAt = null)
+    canvas.addEventListener('pointerdown', onPointerDown)
+    canvas.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
 
     map.on('load', () => {
       // The drone's actual flown path, floating at its recorded altitude
@@ -608,6 +663,9 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
 
     return () => {
       resizeObserver.disconnect()
+      canvas.removeEventListener('pointerdown', onPointerDown)
+      canvas.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
       map.remove()
       mapRef.current = null
       homeMarkerRef.current = null
@@ -711,6 +769,42 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
     }
   }, [telemetryStale])
 
+  // Follow: keep the camera on the aircraft on every telemetry update.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!following || !map || !vehicleState || vehicleState.gps.fixType === 'none') return
+    if (followSettlingRef.current) return
+    // A jump per update (10 a second) reads as smooth motion; easing each one
+    // gets cut short by the next and leaves the camera trailing behind.
+    map.jumpTo({ center: [vehicleState.position.lon, vehicleState.position.lat], ...followCamera(map, followView, vehicleState, true) })
+  }, [following, followView, vehicleState])
+
+  // Stopped following: give the view its centre back (chase view shifts it down).
+  useEffect(() => {
+    const map = mapRef.current
+    if (!following && map) map.setPadding({ top: 0, bottom: 0, left: 0, right: 0 })
+  }, [following])
+
+  function startFollowing(view: FollowView) {
+    const map = mapRef.current
+    setFollowView(view)
+    try {
+      localStorage.setItem(FOLLOW_VIEW_KEY, view)
+    } catch {
+      // Only a remembered preference.
+    }
+    setFollowing(true)
+    if (!map || !vehicleState) return
+    followSettlingRef.current = true
+    setTimeout(() => (followSettlingRef.current = false), FOLLOW_START_MS)
+    map.easeTo({
+      center: [vehicleState.position.lon, vehicleState.position.lat],
+      ...followCamera(map, view, vehicleState, false),
+      zoom: Math.max(map.getZoom(), FOLLOW_ZOOM),
+      duration: FOLLOW_START_MS,
+    })
+  }
+
   function selectBasemap(next: 'street' | 'satellite') {
     const map = mapRef.current
     if (!map || !loadedRef.current) return
@@ -727,6 +821,8 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
   function handleRecenter() {
     const map = mapRef.current
     if (!map) return
+    setFollowing(false)
+    map.setPadding({ top: 0, bottom: 0, left: 0, right: 0 })
 
     const isSquare = Math.abs(map.getBearing()) < 0.5 && Math.abs(map.getPitch()) < 0.5
     if (!isSquare) {
@@ -786,6 +882,37 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       >
         <LocateFixed size={14} style={{ color: 'var(--primary)' }} aria-hidden />
       </button>
+
+      {/* Follow the drone; while following, pick chase (30° behind) or top-down. */}
+      <div className="absolute right-4 top-[8.25rem] z-10 flex items-center gap-1.5">
+        {following && (
+          <div className="glass-panel flex overflow-hidden p-0.5" role="group" aria-label="Follow view">
+            {(['chase', 'top'] as const).map((view) => (
+              <button
+                key={view}
+                type="button"
+                onClick={() => startFollowing(view)}
+                aria-pressed={followView === view}
+                className="hud-label rounded-md px-2 py-1 transition"
+                style={followView === view ? { color: 'var(--primary)', background: 'var(--accent)' } : undefined}
+              >
+                {view === 'chase' ? 'Chase 30°' : 'Top-down'}
+              </button>
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => (following ? setFollowing(false) : startFollowing(followView))}
+          aria-pressed={following}
+          aria-label={following ? 'Stop following the drone' : 'Follow the drone'}
+          title={following ? 'Stop following (or drag the map)' : 'Follow the drone'}
+          className="glass-panel flex h-8 w-8 items-center justify-center transition hover:ring-2 hover:ring-primary"
+          style={following ? { background: 'var(--accent)', boxShadow: '0 0 0 2px var(--primary)' } : undefined}
+        >
+          <Navigation size={14} style={{ color: 'var(--primary)' }} aria-hidden />
+        </button>
+      </div>
     </div>
   )
 }

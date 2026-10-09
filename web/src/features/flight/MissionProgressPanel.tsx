@@ -104,8 +104,18 @@ function legFraction(mission: Mission, index: number, toCurrentM: number, home: 
   return legM > 0 ? Math.min(1, Math.max(0, 1 - toCurrentM / legM)) : 0
 }
 
+/** Only while a mission is actually being flown: in the air, or taking off
+ * in AUTO. Not armed and idle on the ground, and not once it has landed at
+ * the end; the flight log keeps the numbers after that. */
+export function isFlyingMission(state: VehicleState): boolean {
+  if (!state.armed) return false
+  if (!state.landed) return true
+  const { currentIndex, total } = state.missionProgress
+  return state.flightMode === 'AUTO' && !(total > 0 && currentIndex >= total - 1)
+}
+
 /**
- * Where the flight is up to, while armed: the mission and its state, how far
+ * Where the flight is up to, while a mission is being flown: the mission and its state, how far
  * through the plan, what's being flown to, and time and distance left and
  * home. Estimates use the planner's ArduPlane figures (domain/missionProfile)
  * rather than the current ground speed, which swings with wind and turns.
@@ -130,7 +140,7 @@ export function MissionProgressPanel({ mission }: { mission: Mission | null }) {
     })
   }
 
-  if (!state?.armed) return null
+  if (!state || !isFlyingMission(state)) return null
 
   const home = state.home ? { lat: state.home.lat, lon: state.home.lon } : null
   const aircraft = aircraftOf(state)

@@ -1,5 +1,6 @@
 export * from './checklist'
 export * from './command'
+export * from './flightRecord'
 export * from './geo'
 export * from './link'
 export * from './mission'

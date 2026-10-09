@@ -1,15 +1,19 @@
 import { createContext, useContext } from 'react'
 import { useStore } from 'zustand'
-import type {
-  AuthState,
-  AuthStore,
-  MissionStore,
-  MissionStoreState,
-  VehicleStore,
-  VehicleStoreState,
+import {
+  createFlightLogStore,
+  type AuthState,
+  type AuthStore,
+  type FlightLogStore,
+  type FlightLogStoreState,
+  type MissionStore,
+  type MissionStoreState,
+  type VehicleStore,
+  type VehicleStoreState,
 } from '../state'
 import type { MissionTranslator, TerrainService } from '../services'
 import { ArduPilotMissionTranslator } from '../services/ardupilot'
+import { InMemoryFlightLogRepository } from '../services/mock'
 
 export interface AppStores {
   authStore: AuthStore
@@ -50,4 +54,12 @@ export const TerrainServiceContext = createContext<TerrainService | null>(null)
 
 export function useTerrainService(): TerrainService | null {
   return useContext(TerrainServiceContext)
+}
+
+/** Provided from AppServices; the default keeps records in memory, so
+ * feature tests don't need to wire one up. */
+export const FlightLogContext = createContext<FlightLogStore>(createFlightLogStore(new InMemoryFlightLogRepository()))
+
+export function useFlightLog<T>(selector: (s: FlightLogStoreState) => T): T {
+  return useStore(useContext(FlightLogContext), selector)
 }

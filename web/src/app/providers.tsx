@@ -1,9 +1,16 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { MockLink } from '../link/mock'
-import { createAuthStore, createMissionStore, createVehicleStore } from '../state'
+import { createAuthStore, createFlightLogStore, createMissionStore, createVehicleStore } from '../state'
 import { createAppServices, type AppServices } from './config'
 import { MockDevTools } from './MockDevTools'
-import { AppStoresContext, MissionTranslatorContext, TerrainServiceContext, useVehicleStore, type AppStores } from './store-hooks'
+import {
+  AppStoresContext,
+  FlightLogContext,
+  MissionTranslatorContext,
+  TerrainServiceContext,
+  useVehicleStore,
+  type AppStores,
+} from './store-hooks'
 import { DEFAULT_USERNAME, DEFAULT_PASSWORD } from '../services/mock'
 
 export function AppProviders({ children }: { children: ReactNode }) {
@@ -13,6 +20,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
     vehicleStore: createVehicleStore(services.resolveVehicleLink),
     missionStore: createMissionStore(services.missionRepository),
   }))
+  const [flightLog] = useState(() => createFlightLogStore(services.flightLogRepository))
 
   // Dev convenience only: skip retyping the dev credentials on every reload
   // while iterating. Falls back to the real login screen if this ever
@@ -29,8 +37,10 @@ export function AppProviders({ children }: { children: ReactNode }) {
     <AppStoresContext.Provider value={stores}>
       <MissionTranslatorContext.Provider value={services.missionTranslator}>
         <TerrainServiceContext.Provider value={services.terrain}>
-          {children}
-          <DevTools />
+          <FlightLogContext.Provider value={flightLog}>
+            {children}
+            <DevTools />
+          </FlightLogContext.Provider>
         </TerrainServiceContext.Provider>
       </MissionTranslatorContext.Provider>
     </AppStoresContext.Provider>

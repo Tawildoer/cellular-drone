@@ -1,4 +1,5 @@
 export * from './AuthClient'
+export * from './FlightLogRepository'
 export * from './MissionRepository'
 export * from './MissionTranslator'
 export * from './TerrainService'

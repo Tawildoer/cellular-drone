@@ -10,6 +10,7 @@ import { MissionProfilePanel } from '../mission-planner/MissionProfilePanel'
 import { MissionValidationPanel } from '../mission-planner/MissionValidationPanel'
 import { insertWaypoint, skeletonItems } from '../mission-planner/missionEdit'
 import { EventLogPopout } from './EventLogPopout'
+import { FlightLogPopout } from './FlightLogPopout'
 import { FlightPiP } from './FlightPiP'
 import { HudStrip } from './HudStrip'
 import { LinkQualityPopout } from './LinkQualityPopout'
@@ -18,6 +19,7 @@ import { MissionSelector } from './MissionSelector'
 import { RcOverrideBanner } from './RcOverrideBanner'
 import { FailsafeBanners, TelemetryStaleBanner } from './StatusBanners'
 import { useFlightMission } from './useFlightMission'
+import { useFlightRecorder } from './useFlightRecorder'
 
 /**
  * Laptop-primary layout (see memory: cellular-drone-laptop-first): the map/
@@ -45,6 +47,7 @@ export function FlightScreen({ onBack }: { onBack: () => void }) {
   const [planning, setPlanning] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const mission = useFlightMission(planning)
+  useFlightRecorder(mission)
 
   const draft = useMissionStore((s) => s.draft)
   const newDraft = useMissionStore((s) => s.newDraft)
@@ -95,6 +98,7 @@ export function FlightScreen({ onBack }: { onBack: () => void }) {
               <MissionProgressPanel mission={mission} />
               <MissionSelector />
               <EventLogPopout />
+              <FlightLogPopout />
               <LinkQualityPopout />
             </>
           )}

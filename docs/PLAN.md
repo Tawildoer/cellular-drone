@@ -33,6 +33,7 @@ Order: **frontend first against a mock vehicle**, then the real backend undernea
 - [x] Planner: height profile over terrain with clearance warnings, distance and time estimates at ArduPlane SITL figures (ADR-0021, 2026-10-08)
 - [x] Planner: "Follow terrain at X m" sets heights from the terrain and adds waypoints over ridges (ADR-0021 addendum, 2026-10-08). Native ArduPlane terrain following is a later ADR
 - [x] UI: preflight checklist gate + command bar with hold-to-confirm (arm, start, RTL, QLAND)
+- [x] UI: flight log (each flight's stats, kept in the browser), follow-drone camera (chase 30° or top-down), progress panel only during a mission (2026-10-09)
 - [x] UI: operator awareness: mission progress (item, distance, time left), way home, failsafe banners, stale-telemetry warning with the aircraft faded on the map, commands that show pending/accepted and say why they're disabled (2026-10-09)
 - [ ] Dev panel for MockLink fault injection
 - [ ] Playwright smoke: login → plan → upload → arm → start → pause/resume → RTL

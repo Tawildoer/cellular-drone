@@ -6,7 +6,7 @@ import { MockLink } from '../../../link/mock'
 import { LocalStorageMissionRepository } from '../../../services/local-storage'
 import { MockAuthClient } from '../../../services/mock'
 import { createAuthStore, createMissionStore, createVehicleStore } from '../../../state'
-import { MissionProgressPanel } from '../MissionProgressPanel'
+import { isFlyingMission, MissionProgressPanel } from '../MissionProgressPanel'
 import { FailsafeBanners, TelemetryStaleBanner } from '../StatusBanners'
 
 const HOME = { lat: -37.861, lon: 145.062 }
@@ -111,3 +111,17 @@ describe('status banners', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('No telemetry for 8 s')
   })
 })
+
+describe('isFlyingMission', () => {
+  it('is true in the air, and taking off in AUTO', () => {
+    expect(isFlyingMission(state())).toBe(true)
+    expect(isFlyingMission(state({ landed: true, flightMode: 'AUTO', missionProgress: { currentIndex: 0, total: 4 } }))).toBe(true)
+  })
+
+  it('is false disarmed, idle on the ground, and landed at the end', () => {
+    expect(isFlyingMission(state({ armed: false, landed: true }))).toBe(false)
+    expect(isFlyingMission(state({ landed: true, flightMode: 'QLOITER' }))).toBe(false)
+    expect(isFlyingMission(state({ landed: true, flightMode: 'AUTO', missionProgress: { currentIndex: 3, total: 4 } }))).toBe(false)
+  })
+})
+

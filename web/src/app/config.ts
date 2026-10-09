@@ -3,9 +3,9 @@ import type { VehicleLink } from '../link'
 import { MockLink } from '../link/mock'
 import { WebRtcLink } from '../link/webrtc'
 import { WsLink } from '../link/ws'
-import type { AuthClient, MissionRepository, MissionTranslator, TerrainService } from '../services'
+import type { AuthClient, FlightLogRepository, MissionRepository, MissionTranslator, TerrainService } from '../services'
 import { ArduPilotMissionTranslator } from '../services/ardupilot'
-import { LocalStorageMissionRepository } from '../services/local-storage'
+import { LocalStorageFlightLogRepository, LocalStorageMissionRepository } from '../services/local-storage'
 import { MapTilerTerrainService } from '../services/maptiler'
 import { MockAuthClient } from '../services/mock'
 
@@ -68,6 +68,8 @@ export interface AppServices {
   resolveVehicleLink: (vehicleId: string) => VehicleLink
   vehicles: VehicleDescriptor[]
   missionRepository: MissionRepository
+  /** Finished flights, for the flight log. */
+  flightLogRepository: FlightLogRepository
   /** How missions look to the flight stack, for planner preview and export
    * (ADR-0017). The agent does the authoritative translation on upload. */
   missionTranslator: MissionTranslator
@@ -123,6 +125,7 @@ export function createAppServices(): AppServices {
     resolveVehicleLink,
     vehicles: VEHICLES,
     missionRepository: new LocalStorageMissionRepository(),
+    flightLogRepository: new LocalStorageFlightLogRepository(),
     missionTranslator: new ArduPilotMissionTranslator(),
     terrain: typeof maptilerKey === 'string' && maptilerKey ? new MapTilerTerrainService(maptilerKey) : null,
   }
