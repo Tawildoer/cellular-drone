@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useVehicleStore } from '../../app/store-hooks'
 import {
   haversineDistanceM,
+  isFlyingMission,
   itemPosition,
   loiterLapsDone,
   missionItemLabel,
@@ -102,16 +103,6 @@ function legFraction(mission: Mission, index: number, toCurrentM: number, home: 
   if (!to || !from) return 0
   const legM = haversineDistanceM(from, to)
   return legM > 0 ? Math.min(1, Math.max(0, 1 - toCurrentM / legM)) : 0
-}
-
-/** Only while a mission is actually being flown: in the air, or taking off
- * in AUTO. Not armed and idle on the ground, and not once it has landed at
- * the end; the flight log keeps the numbers after that. */
-export function isFlyingMission(state: VehicleState): boolean {
-  if (!state.armed) return false
-  if (!state.landed) return true
-  const { currentIndex, total } = state.missionProgress
-  return state.flightMode === 'AUTO' && !(total > 0 && currentIndex >= total - 1)
 }
 
 /**

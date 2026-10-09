@@ -113,10 +113,10 @@ export function LinkQualityPanel() {
   const freezes = linkStatus?.videoFreezeCount
 
   return (
-    <div className="glass-panel flex w-80 flex-col gap-2 px-3 py-2.5">
-      <div className="flex items-center justify-between gap-2 pl-8">
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
         <span className="hud-label" style={{ color: 'var(--foreground)' }}>
-          Link quality
+          Now
         </span>
         <GradeChip grade={linkGrade(linkStatus)} emptyLabel="No link" />
       </div>

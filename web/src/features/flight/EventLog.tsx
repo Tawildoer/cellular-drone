@@ -6,14 +6,8 @@ export function EventLog() {
   const newestFirst = [...events].reverse()
 
   return (
-    <div className="glass-panel flex h-full w-full flex-col overflow-hidden">
-      {/* pl-10 clears the close button EventLogPopout overlays at top-left,
-          in the same spot as the toggle that opened this panel. */}
-      <div className="flex h-9 items-center border-b border-border/60 pl-10 pr-2.5">
-        <span className="hud-label">Event log</span>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-2.5 py-1.5">
+    <div className="flex flex-col">
+      <div>
         {newestFirst.length === 0 ? (
           <span className="hud-label">No events yet</span>
         ) : (

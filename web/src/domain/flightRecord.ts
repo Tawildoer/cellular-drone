@@ -133,3 +133,13 @@ export const FLIGHT_OUTCOME_LABEL: Record<FlightOutcome, string> = {
   pilot: 'RC pilot took over',
   other: 'Ended',
 }
+
+/** Only while a mission is actually being flown: in the air, or taking off
+ * in AUTO. Not armed and idle on the ground, and not once it has landed at
+ * the end; the flight log keeps the numbers after that. */
+export function isFlyingMission(state: VehicleState): boolean {
+  if (!state.armed) return false
+  if (!state.landed) return true
+  const { currentIndex, total } = state.missionProgress
+  return state.flightMode === 'AUTO' && !(total > 0 && currentIndex >= total - 1)
+}

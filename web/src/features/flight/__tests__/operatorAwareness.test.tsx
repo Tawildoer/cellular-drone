@@ -1,12 +1,12 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { AppStoresContext, type AppStores } from '../../../app/store-hooks'
-import { fromLocalEastNorthM, type Mission, type VehicleState } from '../../../domain'
+import { fromLocalEastNorthM, isFlyingMission, type Mission, type VehicleState } from '../../../domain'
 import { MockLink } from '../../../link/mock'
 import { LocalStorageMissionRepository } from '../../../services/local-storage'
 import { MockAuthClient } from '../../../services/mock'
 import { createAuthStore, createMissionStore, createVehicleStore } from '../../../state'
-import { isFlyingMission, MissionProgressPanel } from '../MissionProgressPanel'
+import { MissionProgressPanel } from '../MissionProgressPanel'
 import { FailsafeBanners, TelemetryStaleBanner } from '../StatusBanners'
 
 const HOME = { lat: -37.861, lon: 145.062 }

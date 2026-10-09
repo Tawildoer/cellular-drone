@@ -9,13 +9,10 @@ import { MissionListPanel } from '../mission-planner/MissionListPanel'
 import { MissionProfilePanel } from '../mission-planner/MissionProfilePanel'
 import { MissionValidationPanel } from '../mission-planner/MissionValidationPanel'
 import { insertWaypoint, skeletonItems } from '../mission-planner/missionEdit'
-import { EventLogPopout } from './EventLogPopout'
-import { FlightLogPopout } from './FlightLogPopout'
 import { FlightPiP } from './FlightPiP'
 import { HudStrip } from './HudStrip'
-import { LinkQualityPopout } from './LinkQualityPopout'
 import { MissionProgressPanel } from './MissionProgressPanel'
-import { MissionSelector } from './MissionSelector'
+import { MenuDrawer } from './MenuDrawer'
 import { RcOverrideBanner } from './RcOverrideBanner'
 import { FailsafeBanners, TelemetryStaleBanner } from './StatusBanners'
 import { useFlightMission } from './useFlightMission'
@@ -90,18 +87,13 @@ export function FlightScreen({ onBack }: { onBack: () => void }) {
           <TelemetryStaleBanner />
           <RcOverrideBanner />
           <FailsafeBanners />
-          <HudStrip />
-          {planning ? (
-            <MissionListPanel />
-          ) : (
-            <>
-              <MissionProgressPanel mission={mission} />
-              <MissionSelector />
-              <EventLogPopout />
-              <FlightLogPopout />
-              <LinkQualityPopout />
-            </>
-          )}
+          {/* The menu (☰) holds what's looked at now and then: missions,
+              logs, link detail, simulator. The map keeps only what flying needs. */}
+          <div className="pointer-events-none flex items-start gap-2 [&>*]:pointer-events-auto">
+            <MenuDrawer />
+            <HudStrip />
+          </div>
+          {planning ? <MissionListPanel /> : <MissionProgressPanel mission={mission} />}
         </div>
 
         <div className="pointer-events-none flex shrink-0 gap-2 [&>*]:pointer-events-auto">

@@ -1,11 +1,13 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { MockLink } from '../link/mock'
 import { createAuthStore, createFlightLogStore, createMissionStore, createVehicleStore } from '../state'
 import { createAppServices, type AppServices } from './config'
-import { MockDevTools } from './MockDevTools'
+import { Wrench } from 'lucide-react'
+import { MockDevToolsPanel } from './MockDevTools'
 import {
   AppStoresContext,
   FlightLogContext,
+  MenuExtrasContext,
   MissionTranslatorContext,
   TerrainServiceContext,
   useVehicleStore,
@@ -38,8 +40,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
       <MissionTranslatorContext.Provider value={services.missionTranslator}>
         <TerrainServiceContext.Provider value={services.terrain}>
           <FlightLogContext.Provider value={flightLog}>
-            {children}
-            <DevTools />
+            <MenuExtras>{children}</MenuExtras>
           </FlightLogContext.Provider>
         </TerrainServiceContext.Provider>
       </MissionTranslatorContext.Provider>
@@ -47,10 +48,18 @@ export function AppProviders({ children }: { children: ReactNode }) {
   )
 }
 
-/** Sim tuning panel (speed, look-ahead), shown whenever the connected vehicle
- * is the in-browser sim — the demo drone, or any vehicle in a mock build — in
- * every build, including the public demo. Never for a real vehicle link. */
-function DevTools() {
+/** Sim tuning (speed, look-ahead) as a Simulator section in the flight
+ * screen's menu, whenever the connected vehicle is the in-browser sim (the
+ * demo drone, or any vehicle in a mock build), in every build including the
+ * public demo. Never for a real vehicle link. */
+function MenuExtras({ children }: { children: ReactNode }) {
   const activeLink = useVehicleStore((s) => s.activeLink)
-  return activeLink instanceof MockLink ? <MockDevTools link={activeLink} /> : null
+  const extras = useMemo(
+    () =>
+      activeLink instanceof MockLink
+        ? [{ id: 'simulator', label: 'Simulator', icon: Wrench, content: <MockDevToolsPanel link={activeLink} /> }]
+        : [],
+    [activeLink],
+  )
+  return <MenuExtrasContext.Provider value={extras}>{children}</MenuExtrasContext.Provider>
 }

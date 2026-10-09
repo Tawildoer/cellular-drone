@@ -1,4 +1,5 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, type ReactNode } from 'react'
+import type { LucideIcon } from 'lucide-react'
 import { useStore } from 'zustand'
 import {
   createFlightLogStore,
@@ -62,4 +63,19 @@ export const FlightLogContext = createContext<FlightLogStore>(createFlightLogSto
 
 export function useFlightLog<T>(selector: (s: FlightLogStoreState) => T): T {
   return useStore(useContext(FlightLogContext), selector)
+}
+
+/** A section the app adds to the flight screen's menu, e.g. the simulator's
+ * controls, which only app/ may build (they talk to a concrete link). */
+export interface MenuSection {
+  id: string
+  label: string
+  icon: LucideIcon
+  content: ReactNode
+}
+
+export const MenuExtrasContext = createContext<MenuSection[]>([])
+
+export function useMenuExtras(): MenuSection[] {
+  return useContext(MenuExtrasContext)
 }

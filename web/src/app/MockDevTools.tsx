@@ -1,21 +1,18 @@
-import { Wrench, X } from 'lucide-react'
 import { useState } from 'react'
 import type { MockLink } from '../link/mock'
 
-const TOGGLE_SIZE = 'h-9 w-9'
 const MIN_TIME_SCALE = 1
 const MAX_TIME_SCALE = 20
 const MIN_LOOK_AHEAD_M = 5
 const MAX_LOOK_AHEAD_M = 200
 
 /**
- * Dev-only tuning panel for the mock simulated drone — speed up the sim and
- * adjust the L1 guidance look-ahead distance live, without editing code and
- * rebuilding. Only ever rendered while connected to a MockLink (see
- * providers.tsx) — a real vehicle link has no such knobs.
+ * Tuning for the in-browser simulated drone: speed up the sim and adjust the
+ * L1 guidance look-ahead live, without editing code. Shown as the menu's
+ * Simulator section only while connected to a MockLink (providers.tsx); a
+ * real vehicle link has no such knobs.
  */
-export function MockDevTools({ link }: { link: MockLink }) {
-  const [open, setOpen] = useState(false)
+export function MockDevToolsPanel({ link }: { link: MockLink }) {
   const [timeScale, setTimeScaleValue] = useState(() => link.getTimeScale())
   const [lookAheadM, setLookAheadMValue] = useState(() => link.getFaultConfig().lookAheadM)
 
@@ -29,28 +26,9 @@ export function MockDevTools({ link }: { link: MockLink }) {
     setLookAheadMValue(value)
   }
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-label="Show dev tools"
-        className={`glass-panel fixed bottom-4 left-1/2 z-50 flex ${TOGGLE_SIZE} -translate-x-1/2 items-center justify-center transition hover:ring-2 hover:ring-primary`}
-      >
-        <Wrench size={14} style={{ color: 'var(--primary)' }} aria-hidden />
-      </button>
-    )
-  }
-
   return (
-    <div className="glass-panel fixed bottom-4 left-1/2 z-50 flex w-72 -translate-x-1/2 flex-col gap-3 p-3">
-      <div className="flex items-center justify-between">
-        <span className="hud-label">Dev tools — mock drone</span>
-        <button type="button" onClick={() => setOpen(false)} aria-label="Hide dev tools" className="transition hover:opacity-70">
-          <X size={14} style={{ color: 'var(--primary)' }} aria-hidden />
-        </button>
-      </div>
-
+    <div className="flex flex-col gap-3">
+      <p className="text-xs opacity-70">The demo drone is simulated in this browser. These change only the simulation.</p>
       <label className="flex flex-col gap-1">
         <span className="hud-label flex items-center justify-between">
           <span>Sim speed</span>
