@@ -50,17 +50,28 @@ const DASH_GAP_MIN_PX = 6
 const TRAIL_HALF_WIDTH_M = 0.8
 const TRAIL_HALF_THICKNESS_M = 0.8
 
+/** The trail's oldest end is drawn this fraction of full width, tapering
+ * up to full width at the aircraft. */
+const TRAIL_TAIL_WIDTH = 0.1
+
 /** The drone's actual flown path, floating at its real recorded altitude
  * instead of flat on the ground — same `fill-extrusion` ribbon technique as
  * the planned path, but solid (not dashed, to read as "where it's been"
  * rather than "where it's going") and built straight from the recorded
  * trail points rather than interpolated along a prescribed line, since
- * telemetry is already sampled every tick. */
+ * telemetry is already sampled every tick.
+ *
+ * It fades out towards its oldest end, so dropping the oldest point each
+ * update doesn't make the tail jump: each segment carries `fade` (0 at the
+ * tail, 1 at the aircraft), which the layer maps to colour, and narrows
+ * towards the tail. (A fill-extrusion layer's opacity can't vary per
+ * feature, so the fade is colour and width.) */
 export function buildFloatingTrailGeoJson(trail: AltitudePoint[], metersPerPx = 0): FeatureCollection<Polygon> {
   const features: Feature<Polygon>[] = []
   const halfWidthM = atLeastPx(TRAIL_HALF_WIDTH_M, LINE_MIN_HALF_WIDTH_PX, metersPerPx)
 
-  for (let i = 0; i < trail.length - 1; i++) {
+  const segments = trail.length - 1
+  for (let i = 0; i < segments; i++) {
     const a = trail[i]
     const b = trail[i + 1]
     if (!a || !b) continue
@@ -70,7 +81,9 @@ export function buildFloatingTrailGeoJson(trail: AltitudePoint[], metersPerPx = 
     const len = Math.hypot(dLon, dLat)
     if (len === 0) continue
 
-    const { dLat: halfWidthLat, dLon: halfWidthLon } = metersToDegreesAt((a.point.lat + b.point.lat) / 2, halfWidthM)
+    const fade = segments > 1 ? i / (segments - 1) : 1
+    const width = halfWidthM * (TRAIL_TAIL_WIDTH + (1 - TRAIL_TAIL_WIDTH) * fade)
+    const { dLat: halfWidthLat, dLon: halfWidthLon } = metersToDegreesAt((a.point.lat + b.point.lat) / 2, width)
     const perpLon = (-dLat / len) * halfWidthLon
     const perpLat = (dLon / len) * halfWidthLat
 
@@ -88,6 +101,7 @@ export function buildFloatingTrailGeoJson(trail: AltitudePoint[], metersPerPx = 
       properties: {
         base: Math.max(0, altMid - TRAIL_HALF_THICKNESS_M),
         top: altMid + TRAIL_HALF_THICKNESS_M,
+        fade,
       },
       geometry: { type: 'Polygon', coordinates: [ring] },
     })

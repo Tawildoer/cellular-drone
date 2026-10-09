@@ -430,7 +430,8 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
         source: TRAIL_SOURCE,
         layout: { visibility: 'none' }, // by camera zoom: syncZoomLayers
         paint: {
-          'fill-extrusion-color': '#00d4ff',
+          // Older segments darken towards the map (buildFloatingTrailGeoJson).
+          'fill-extrusion-color': ['interpolate', ['linear'], ['get', 'fade'], 0, '#0b2a33', 0.6, '#0a8fb0', 1, '#00d4ff'],
           'fill-extrusion-height': ['get', 'top'],
           'fill-extrusion-base': ['get', 'base'],
           'fill-extrusion-opacity': 1,
@@ -519,13 +520,28 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       // depth, so nothing can fight. Same colours and dashing as the 3D set.
       // Shown below FLAT_OVERLAY_MAX_ZOOM by syncZoomLayers, not a maxzoom.
       const lineShape = { 'line-join': 'round', 'line-cap': 'round' } as const
-      map.addSource(TRAIL_FLAT_SOURCE, { type: 'geojson', data: buildTrailLineGeoJson(trailRef.current) })
+      // lineMetrics: the trail fades from transparent at its oldest end to
+      // full at the aircraft, so dropping the oldest point doesn't jump.
+      map.addSource(TRAIL_FLAT_SOURCE, { type: 'geojson', lineMetrics: true, data: buildTrailLineGeoJson(trailRef.current) })
       map.addLayer({
         id: TRAIL_FLAT_SOURCE,
         type: 'line',
         source: TRAIL_FLAT_SOURCE,
         layout: lineShape,
-        paint: { 'line-color': '#00d4ff', 'line-width': 2.5 },
+        paint: {
+          'line-width': 2.5,
+          'line-gradient': [
+            'interpolate',
+            ['linear'],
+            ['line-progress'],
+            0,
+            'rgba(0, 212, 255, 0)',
+            0.5,
+            'rgba(0, 212, 255, 0.55)',
+            1,
+            'rgba(0, 212, 255, 1)',
+          ],
+        },
       })
       map.addSource(MISSION_PATH_FLAT_SOURCE, { type: 'geojson', data: flatPathGeoJson(mission, vehicleState, false) })
       map.addLayer({

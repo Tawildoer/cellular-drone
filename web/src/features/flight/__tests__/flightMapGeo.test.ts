@@ -49,6 +49,17 @@ describe('appendTrailPoint', () => {
 })
 
 describe('buildFloatingTrailGeoJson', () => {
+  it('fades from the oldest segment (0) to the newest (1), narrowing towards the tail', () => {
+    const trail = [0, 0.001, 0.002, 0.003].map((lon) => altPoint(0, lon, 50))
+    const features = buildFloatingTrailGeoJson(trail).features
+    expect(features.map((f) => f.properties?.fade)).toEqual([0, 0.5, 1])
+    const widthOf = (i: number) => {
+      const lats = features[i]?.geometry.coordinates[0]?.map((c) => c[1] ?? 0) ?? []
+      return Math.max(...lats) - Math.min(...lats)
+    }
+    expect(widthOf(0)).toBeLessThan(widthOf(2))
+  })
+
   it('is empty with fewer than two points', () => {
     expect(buildFloatingTrailGeoJson([]).features).toEqual([])
     expect(buildFloatingTrailGeoJson([altPoint(0, 0, 10)]).features).toEqual([])

@@ -25,11 +25,13 @@ import { useFlightMission } from './useFlightMission'
  * overwhelming) and everything else floats on top as small, corner-anchored
  * overlay panels — kept deliberately compact rather than large blocks, so
  * they read as pop-out widgets, not a layer that competes with the map for
- * attention. The top bar's wrapper spans the full width so its children can
- * be `justify-between`, so it (and nothing inside it needs to be)
- * is `pointer-events-none` with `pointer-events-auto` on the actual panels —
- * otherwise the empty space between them would swallow map drag/click
- * gestures that should fall through to the map underneath.
+ * attention. Every layout wrapper (the full-width top bar, the left column,
+ * the button group, the bottom stack) is `pointer-events-none`, and only the
+ * panels themselves are `pointer-events-auto`: a column is as wide as its
+ * widest child (the HUD strip), so otherwise the empty space beside a
+ * narrower panel would swallow map drags, and start a text selection
+ * instead. The overlay is `select-none` too, so a drag that starts on a
+ * panel can't highlight its text (inputs still edit normally).
  *
  * Mission planning lives here rather than as a separate screen (it used to
  * be — see docs/DECISIONS.md) because a mission is flown by a specific
@@ -75,13 +77,13 @@ export function FlightScreen({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <main className="relative h-svh w-full overflow-hidden bg-background">
+    <main className="relative h-svh w-full select-none overflow-hidden bg-background">
       <div className="absolute inset-3 overflow-hidden rounded-[var(--panel-radius)] border border-border/60">
         <FlightPiP mission={mission} onMapClick={planning ? handleMapClick : undefined} focusMap={planning} />
       </div>
 
       <div className="pointer-events-none absolute left-6 right-6 top-6 z-20 flex items-start justify-between gap-3">
-        <div className="pointer-events-auto flex flex-col items-start gap-2">
+        <div className="pointer-events-none flex flex-col items-start gap-2 [&>*]:pointer-events-auto">
           <TelemetryStaleBanner />
           <RcOverrideBanner />
           <FailsafeBanners />
@@ -98,7 +100,7 @@ export function FlightScreen({ onBack }: { onBack: () => void }) {
           )}
         </div>
 
-        <div className="pointer-events-auto flex shrink-0 gap-2">
+        <div className="pointer-events-none flex shrink-0 gap-2 [&>*]:pointer-events-auto">
           <Button
             type="button"
             variant={planning ? 'default' : 'ghost'}
@@ -119,7 +121,8 @@ export function FlightScreen({ onBack }: { onBack: () => void }) {
           bottom and would otherwise climb over them on a short screen. */}
       <div
         className={`absolute bottom-6 left-6 z-20 flex max-w-xl flex-col gap-2 ${
-          planning ? 'max-h-[calc(100svh-15rem)] overflow-y-auto [&>*]:shrink-0' : ''
+          // Planning keeps its own pointer events so its scrollbar can be dragged.
+          planning ? 'max-h-[calc(100svh-15rem)] overflow-y-auto [&>*]:shrink-0' : 'pointer-events-none [&>*]:pointer-events-auto'
         }`}
       >
         {planning && draft ? (
