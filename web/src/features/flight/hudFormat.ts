@@ -52,6 +52,7 @@ export function vtolStateLabel(state: VehicleState['vtolState']): string {
     case 'fw':
       return 'FW'
     case 'transition':
-      return 'Transition'
+      // Short: the HUD tile has a fixed width, and a transition lasts seconds.
+      return 'Trans'
   }
 }

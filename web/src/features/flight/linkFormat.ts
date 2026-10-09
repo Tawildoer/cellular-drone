@@ -10,17 +10,16 @@ export interface LinkBadgeInfo {
 
 export function formatLinkBadge(linkStatus: LinkStatus | null): LinkBadgeInfo {
   if (!linkStatus || linkStatus.state === 'disconnected') {
-    return { label: 'Disconnected', status: 'critical' }
+    return { label: 'No link', status: 'critical' }
   }
   if (linkStatus.state === 'connecting') {
-    return { label: 'Connecting…', status: 'warning' }
+    return { label: 'Linking', status: 'warning' }
   }
 
-  const pathLabel = linkStatus.path === 'relayed' ? 'Relayed' : linkStatus.path === 'direct' ? 'Direct' : 'Connected'
-  const detailParts = [
-    linkStatus.rttMs !== undefined ? `${Math.round(linkStatus.rttMs)} ms` : undefined,
-    linkStatus.ipVersion ? `IPv${linkStatus.ipVersion}` : undefined,
-  ].filter(Boolean)
+  const pathLabel = linkStatus.path === 'relayed' ? 'Relayed' : linkStatus.path === 'direct' ? 'Direct' : 'Linked'
+  // Latency only: the top bar's tile has a fixed width. The IP version and
+  // the rest are in the menu's Link quality section.
+  const detailParts = [linkStatus.rttMs !== undefined ? `${Math.round(linkStatus.rttMs)} ms` : undefined].filter(Boolean)
   // Latency only: this tile is about the connection; the video badge and
   // the link quality panel cover the feed itself.
   const latency = gradeStatus(gradeHigherWorse(linkStatus.rttMs, THRESHOLDS.rttMs))

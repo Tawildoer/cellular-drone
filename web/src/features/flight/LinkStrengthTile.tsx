@@ -12,7 +12,7 @@ import {
 } from './linkQuality'
 
 const WINDOW_MS = 10_000
-const WIDTH = 56
+const WIDTH = 48
 const HEIGHT = 18
 const PAD = 2
 
@@ -84,7 +84,11 @@ export function LinkStrengthTile() {
   const poorOffset = (poorY - PAD) / span
 
   return (
-    <div className="flex h-7 shrink-0 items-center gap-1 rounded-lg bg-secondary px-1.5" title={`Link strength, last ${WINDOW_MS / 1000} s`}>
+    <div
+      className="flex h-7 shrink-0 items-center gap-1 overflow-hidden rounded-lg bg-secondary px-1.5"
+      style={{ width: 125 }}
+      title={`Link strength, last ${WINDOW_MS / 1000} s`}
+    >
       <span className="hud-label text-[0.5625rem]">Link</span>
       <div className="flex items-center gap-1.5">
         <svg width={WIDTH} height={HEIGHT} role="img" aria-label={summary(series)} className="block overflow-visible">

@@ -898,7 +898,7 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
           percentage-height bug that bit the first version of this component. */}
       <div ref={containerRef} className="w-full flex-1" />
 
-      <div className="glass-panel absolute right-4 top-3 z-10 flex overflow-hidden p-0.5">
+      <div className="glass-panel absolute right-4 top-14 z-10 flex overflow-hidden p-0.5">
         <button
           type="button"
           onClick={() => selectBasemap('street')}
@@ -923,13 +923,13 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
         type="button"
         onClick={handleRecenter}
         aria-label="Square up the camera, then fit the whole mission in view"
-        className="glass-panel absolute right-4 top-[3.25rem] z-10 flex h-8 w-8 items-center justify-center transition hover:ring-2 hover:ring-primary"
+        className="glass-panel absolute right-4 top-24 z-10 flex h-8 w-8 items-center justify-center transition hover:ring-2 hover:ring-primary"
       >
         <LocateFixed size={14} style={{ color: 'var(--primary)' }} aria-hidden />
       </button>
 
       {/* Follow the drone; while following, pick chase (30° behind) or top-down. */}
-      <div className="absolute right-4 top-[5.75rem] z-10 flex items-center gap-1.5">
+      <div className="absolute right-4 top-[8.25rem] z-10 flex items-center gap-1.5">
         {following && (
           <div className="glass-panel flex overflow-hidden p-0.5" role="group" aria-label="Follow view">
             {(['chase', 'top'] as const).map((view) => (

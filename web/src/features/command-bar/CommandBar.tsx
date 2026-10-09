@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { CheckCircle2, Loader2 } from 'lucide-react'
 import { useVehicleStore } from '../../app/store-hooks'
 import { HoldToConfirmButton } from '../../components/HoldToConfirmButton'
-import { Button } from '../../components/ui/button'
 import { evaluatePreflight, type Command, type Mission } from '../../domain'
 
 const COMMAND_LABEL: Record<Command['type'], string> = {
@@ -15,6 +14,9 @@ const COMMAND_LABEL: Record<Command['type'], string> = {
   'mode.qland': 'QLAND',
   'video.config': 'Video settings',
 }
+
+/** Each command is a tile, like the top bar's metrics. */
+const TILE = 'h-8 whitespace-nowrap rounded-lg bg-secondary px-3 hover:bg-white/10'
 
 /** How long "accepted" stays up after a command goes through. */
 const ACCEPTED_MS = 3_000
@@ -52,8 +54,8 @@ export function CommandBar({ mission }: { mission: Mission | null }) {
 
   if (!vehicleState) {
     return (
-      <div className="glass-panel px-3 py-3">
-        <span className="hud-label">Command bar — waiting for telemetry…</span>
+      <div className="flex h-8 items-center rounded-lg bg-secondary px-3">
+        <span className="hud-label">Commands — waiting for telemetry…</span>
       </div>
     )
   }
@@ -75,9 +77,10 @@ export function CommandBar({ mission }: { mission: Mission | null }) {
   const landedReason = vehicleState.landed ? 'On the ground' : null
 
   return (
-    <div className="glass-panel flex flex-wrap items-center gap-1.5 px-2.5 py-2">
+    <div className="flex min-w-0 items-center gap-1.5">
       <Why reason={armReason}>
         <HoldToConfirmButton
+          className={TILE}
           onConfirm={() => void sendCommand({ type: armed ? 'disarm' : 'arm' })}
           disabled={armReason !== null || pendingType === 'arm' || pendingType === 'disarm'}
           variant={armed ? 'default' : 'destructive'}
@@ -88,6 +91,7 @@ export function CommandBar({ mission }: { mission: Mission | null }) {
 
       <Why reason={startReason}>
         <HoldToConfirmButton
+          className={TILE}
           onConfirm={() => void sendCommand({ type: 'mission.start' })}
           disabled={startReason !== null || pendingType === 'mission.start'}
         >
@@ -96,30 +100,29 @@ export function CommandBar({ mission }: { mission: Mission | null }) {
       </Why>
 
       <Why reason={pauseReason}>
-        <Button
+        <button
           type="button"
-          variant="secondary"
-          size="sm"
+          className={`${TILE} text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40`}
           disabled={!canPause || pendingType === 'mode.pause'}
           onClick={() => void sendCommand({ type: 'mode.pause' })}
         >
           Pause
-        </Button>
+        </button>
       </Why>
       <Why reason={resumeReason}>
-        <Button
+        <button
           type="button"
-          variant="secondary"
-          size="sm"
+          className={`${TILE} text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40`}
           disabled={!canResume || pendingType === 'mode.resume'}
           onClick={() => void sendCommand({ type: 'mode.resume' })}
         >
           Resume
-        </Button>
+        </button>
       </Why>
 
       <Why reason={landedReason}>
         <HoldToConfirmButton
+          className={TILE}
           onConfirm={() => void sendCommand({ type: 'mode.rtl' })}
           disabled={landedReason !== null || pendingType === 'mode.rtl'}
         >
@@ -129,6 +132,7 @@ export function CommandBar({ mission }: { mission: Mission | null }) {
 
       <Why reason={landedReason}>
         <HoldToConfirmButton
+          className={TILE}
           onConfirm={() => void sendCommand({ type: 'mode.qland' })}
           disabled={landedReason !== null || pendingType === 'mode.qland'}
           variant="destructive"
@@ -150,7 +154,7 @@ export function CommandBar({ mission }: { mission: Mission | null }) {
         </span>
       )}
       {feedback?.kind === 'error' && (
-        <span role="alert" className="hud-label" style={{ color: 'var(--status-critical)' }}>
+        <span role="alert" className="hud-label min-w-0 truncate" title={feedback.text} style={{ color: 'var(--status-critical)' }}>
           {feedback.text}
         </span>
       )}

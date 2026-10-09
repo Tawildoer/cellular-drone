@@ -64,6 +64,6 @@ describe('vtolStateLabel', () => {
   it('maps every vtol state', () => {
     expect(vtolStateLabel('mc')).toBe('MC')
     expect(vtolStateLabel('fw')).toBe('FW')
-    expect(vtolStateLabel('transition')).toBe('Transition')
+    expect(vtolStateLabel('transition')).toBe('Trans')
   })
 })

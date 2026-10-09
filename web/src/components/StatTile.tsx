@@ -16,15 +16,18 @@ export interface StatTileProps {
   /** For values that explain themselves with their icon ("Armed", "98%"):
    * no visible label, `label` kept for screen readers. */
   hideLabel?: boolean
+  /** Fixed width (px), sized for the longest value, so the bar doesn't
+   * shift as values change. */
+  width?: number
 }
 
-export function StatTile({ label, value, detail, icon: Icon, status, shortLabel, hideLabel }: StatTileProps) {
+export function StatTile({ label, value, detail, icon: Icon, status, shortLabel, hideLabel, width }: StatTileProps) {
   const statusColor = status ? `var(--status-${status})` : undefined
 
   // One compact island in the top bar: [icon] LABEL value detail, on a
   // slightly lighter tile so each metric stands on its own.
   return (
-    <div className="flex h-7 shrink-0 items-center gap-1 rounded-lg bg-secondary px-1.5">
+    <div className="flex h-7 shrink-0 items-center gap-1 overflow-hidden rounded-lg bg-secondary px-1.5" style={width ? { width } : undefined}>
       {Icon && <Icon size={12} aria-hidden className="shrink-0" style={{ color: statusColor ?? 'var(--text-dim)' }} />}
       {hideLabel || shortLabel ? <span className="hud-label sr-only">{label}</span> : null}
       {!hideLabel && (

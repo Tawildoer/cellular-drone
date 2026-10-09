@@ -7,7 +7,11 @@ export interface HoldToConfirmButtonProps {
   disabled?: boolean
   /** destructive = the "break glass" direction of a safety-relevant action (arming, forcing a landing). */
   variant?: 'default' | 'destructive'
+  /** Replaces the default outlined look, e.g. the bottom bar's tiles. */
+  className?: string
 }
+
+const DEFAULT_CLASS = 'rounded-md border border-border/60 px-2.5 py-1.5'
 
 const DEFAULT_DURATION_MS = 900
 
@@ -21,6 +25,7 @@ export function HoldToConfirmButton({
   durationMs = DEFAULT_DURATION_MS,
   disabled = false,
   variant = 'default',
+  className = DEFAULT_CLASS,
 }: HoldToConfirmButtonProps) {
   const [holding, setHolding] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -67,7 +72,7 @@ export function HoldToConfirmButton({
       onContextMenu={(e) => e.preventDefault()}
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}
-      className="relative touch-none select-none overflow-hidden rounded-md border border-border/60 px-2.5 py-1.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
+      className={`relative touch-none select-none overflow-hidden text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${className}`}
       style={{ color: 'var(--foreground)' }}
     >
       <span
