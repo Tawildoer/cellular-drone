@@ -1,5 +1,5 @@
 import type { Feature, FeatureCollection, LineString, Point, Polygon } from 'geojson'
-import { alongTrackFraction, fromLocalEastNorthM, haversineDistanceM, type GeoPoint, type Mission } from '../../domain'
+import { alongTrackFraction, fromLocalEastNorthM, haversineDistanceM, itemPosition, type GeoPoint, type Mission } from '../../domain'
 
 export const MAX_TRAIL_POINTS = 500
 
@@ -101,15 +101,21 @@ const WAYPOINT_MARKER_HALF_THICKNESS_M = 1.5
 /** Waypoint blocks never draw smaller than 12px square. */
 const WAYPOINT_MARKER_MIN_HALF_WIDTH_PX = 6
 
+/** A waypoint the vehicle has flown through: it stays on the map, marked
+ * done (green), while the legs up to it are dropped. */
+function isDone(itemIndex: number, clearedBeforeIndex: number | undefined): boolean {
+  return clearedBeforeIndex !== undefined && itemIndex < clearedBeforeIndex
+}
+
 /** MapLibre's line/marker primitives have no altitude, so each waypoint/
  * loiter item gets a small `fill-extrusion` block hovering at its altM — a
  * thin slab (base/top bracket altM), not a column down to the ground, so it
  * reads as a marker floating in place rather than a post. Same mechanism as
  * the 3D buildings; only visible once the camera is tilted off straight-down.
  *
- * `clearedBeforeIndex`, when given, drops markers before that mission.items
- * index — i.e. a waypoint disappears once the vehicle has flown through it,
- * same as the floating path's already-flown legs (buildMissionFloatingPathGeoJson). */
+ * `clearedBeforeIndex`, when given, marks markers before that mission.items
+ * index `done`: a waypoint the vehicle has flown through stays, drawn green,
+ * while the legs up to it are dropped (buildMissionFloatingPathGeoJson). */
 export function buildMissionWaypointMarkersGeoJson(
   mission: Mission | null,
   clearedBeforeIndex?: number,
@@ -120,7 +126,6 @@ export function buildMissionWaypointMarkersGeoJson(
 
   for (const [itemIndex, item] of (mission?.items ?? []).entries()) {
     if (item.type !== 'waypoint' && item.type !== 'loiter') continue
-    if (clearedBeforeIndex !== undefined && itemIndex < clearedBeforeIndex) continue
 
     const { dLat, dLon } = metersToDegreesAt(item.lat, halfWidthM)
     const ring: [number, number][] = [
@@ -136,6 +141,7 @@ export function buildMissionWaypointMarkersGeoJson(
       properties: {
         base: Math.max(0, item.altM - WAYPOINT_MARKER_HALF_THICKNESS_M),
         top: item.altM + WAYPOINT_MARKER_HALF_THICKNESS_M,
+        done: isDone(itemIndex, clearedBeforeIndex),
       },
       geometry: { type: 'Polygon', coordinates: [ring] },
     })
@@ -396,8 +402,11 @@ export function buildMissionWaypointPointsGeoJson(mission: Mission | null, clear
   const features: Feature<Point>[] = []
   for (const [itemIndex, item] of (mission?.items ?? []).entries()) {
     if (item.type !== 'waypoint' && item.type !== 'loiter') continue
-    if (clearedBeforeIndex !== undefined && itemIndex < clearedBeforeIndex) continue
-    features.push({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: lngLat(item) } })
+    features.push({
+      type: 'Feature',
+      properties: { done: isDone(itemIndex, clearedBeforeIndex) },
+      geometry: { type: 'Point', coordinates: lngLat(item) },
+    })
   }
   return featureCollection(features)
 }
@@ -533,49 +542,37 @@ export function buildFenceGeoJson(mission: Mission | null): Feature<Polygon> | n
   }
 }
 
-export interface MissionZoomOptions {
-  /** Map viewport size in CSS pixels. */
-  viewportPx: { width: number; height: number }
-  /** Space kept clear around the mission, in pixels. */
-  paddingPx?: number
-  /** Zooming out further than this to fit the mission isn't useful (the
-   * drone becomes a dot); fall back to `fallbackZoom` instead. */
-  minZoom?: number
-  fallbackZoom?: number
-  /** Never zoom in closer than this, for a tiny mission. */
-  maxZoom?: number
-}
-
-export const MISSION_FIT_MIN_ZOOM = 13
-export const MISSION_FIT_FALLBACK_ZOOM = 15
+/** Never zoom closer than this when fitting the mission: a tiny mission
+ * would otherwise fill the screen with a few metres of ground. */
 export const MISSION_FIT_MAX_ZOOM = 17
 
-/**
- * The zoom for a view *centred on the drone* that still shows the whole
- * mission: every item, the outer edge of each loiter circle, and home. If
- * that needs zooming out past `minZoom` (a large mission), returns
- * `fallbackZoom` instead, so the drone stays readable.
- */
-export function zoomToShowMission(
-  drone: GeoPoint,
-  mission: Mission | null,
-  home: GeoPoint | null,
-  { viewportPx, paddingPx = 60, minZoom = MISSION_FIT_MIN_ZOOM, fallbackZoom = MISSION_FIT_FALLBACK_ZOOM, maxZoom = MISSION_FIT_MAX_ZOOM }: MissionZoomOptions,
-): number {
-  // Furthest any part of the mission reaches from the drone.
-  let reachM = 0
-  for (const item of mission?.items ?? []) {
-    if (!('lat' in item)) continue
-    const radiusM = item.type === 'loiter' ? item.radiusM : 0
-    reachM = Math.max(reachM, haversineDistanceM(drone, item) + radiusM)
-  }
-  if (home) reachM = Math.max(reachM, haversineDistanceM(drone, home))
-  if (reachM === 0) return fallbackZoom
+/** [[west, south], [east, north]], MapLibre's LngLatBounds order. */
+export type LngLatBoundsLike = [[number, number], [number, number]]
 
-  // Centred on the drone, the mission has to fit in half the shorter side.
-  const halfPx = Math.min(viewportPx.width, viewportPx.height) / 2 - paddingPx
-  if (halfPx <= 0) return fallbackZoom
-  const zoom = Math.log2(metersPerPixel(0, drone.lat) / (reachM / halfPx))
-  if (zoom < minZoom) return fallbackZoom
-  return Math.min(zoom, maxZoom)
+/**
+ * The box around everything the operator needs in view: every item with a
+ * position (to the outer edge of each loiter circle), home and the drone.
+ * Null when there's nothing to show.
+ */
+export function missionBounds(mission: Mission | null, home: GeoPoint | null, drone: GeoPoint | null): LngLatBoundsLike | null {
+  const points: GeoPoint[] = []
+  for (const item of mission?.items ?? []) {
+    const point = itemPosition(item)
+    if (!point) continue
+    if (item.type === 'loiter') {
+      const { dLat, dLon } = metersToDegreesAt(point.lat, item.radiusM)
+      points.push({ lat: point.lat - dLat, lon: point.lon - dLon }, { lat: point.lat + dLat, lon: point.lon + dLon })
+    } else {
+      points.push(point)
+    }
+  }
+  if (home) points.push(home)
+  if (drone) points.push(drone)
+  if (points.length === 0) return null
+  const lons = points.map((p) => p.lon)
+  const lats = points.map((p) => p.lat)
+  return [
+    [Math.min(...lons), Math.min(...lats)],
+    [Math.max(...lons), Math.max(...lats)],
+  ]
 }

@@ -17,7 +17,7 @@ import {
   buildTrailLineGeoJson,
   isLappingCurrentLoiter,
   metersPerPixel,
-  zoomToShowMission,
+  missionBounds,
   MAX_TRAIL_POINTS,
   type AltitudePoint,
 } from '../flightMapGeo'
@@ -372,26 +372,21 @@ describe('buildMissionWaypointMarkersGeoJson', () => {
       })
     }
 
-    it('keeps every marker when nothing has been cleared yet', () => {
-      const m = twoWaypointMission()
-      expect(buildMissionWaypointMarkersGeoJson(m, 0).features).toHaveLength(2)
+    const done = (cleared?: number) =>
+      buildMissionWaypointMarkersGeoJson(twoWaypointMission(), cleared).features.map((f) => f.properties?.done)
+
+    it('marks nothing done before the vehicle has flown through anything', () => {
+      expect(done(0)).toEqual([false, false])
+      expect(done(undefined)).toEqual([false, false])
     })
 
-    it('drops a waypoint marker once the vehicle has flown through it', () => {
-      const m = twoWaypointMission()
+    it('keeps a waypoint the vehicle has flown through, marked done', () => {
       // missionProgress.currentIndex = 2 means item 1 (the first waypoint) is behind it.
-      expect(buildMissionWaypointMarkersGeoJson(m, 2).features).toHaveLength(1)
+      expect(done(2)).toEqual([true, false])
     })
 
-    it('keeps the current target waypoint visible until it too is cleared', () => {
-      const m = twoWaypointMission()
-      const remaining = buildMissionWaypointMarkersGeoJson(m, 2).features[0]
-      expect(remaining?.properties?.top).toBeCloseTo(50 + 1.5, 5)
-    })
-
-    it('drops every marker once clearedBeforeIndex is past the whole mission', () => {
-      const m = twoWaypointMission()
-      expect(buildMissionWaypointMarkersGeoJson(m, 99).features).toEqual([])
+    it('marks every waypoint done once the whole mission is past', () => {
+      expect(done(99)).toEqual([true, true])
     })
   })
 })
@@ -587,9 +582,9 @@ describe('flat (zoomed-out) overlays', () => {
     expect(line?.geometry.coordinates).toEqual([[0, 0], [0.001, 0], [0.002, 0]])
   })
 
-  it('draws a point per waypoint/loiter, dropping ones already flown through', () => {
+  it('draws a point per waypoint/loiter, marking ones already flown through done', () => {
     expect(buildMissionWaypointPointsGeoJson(twoLegs()).features.map((f) => f.geometry.coordinates)).toEqual([[0.01, 0], [0.02, 0]])
-    expect(buildMissionWaypointPointsGeoJson(twoLegs(), 2).features).toHaveLength(1)
+    expect(buildMissionWaypointPointsGeoJson(twoLegs(), 2).features.map((f) => f.properties?.done)).toEqual([true, false])
   })
 
   it('draws a line per leg from home, dropping cleared legs', () => {
@@ -626,36 +621,29 @@ describe('flat (zoomed-out) overlays', () => {
   })
 })
 
-describe('zoomToShowMission', () => {
-  const drone = { lat: -37.861, lon: 145.062 }
-  const viewportPx = { width: 1200, height: 800 }
-  const at = (eastM: number, northM: number) => fromLocalEastNorthM(drone, eastM, northM)
+describe('missionBounds', () => {
+  const home = { lat: -37.861, lon: 145.062 }
+  const at = (eastM: number, northM: number) => fromLocalEastNorthM(home, eastM, northM)
   const missionWith = (items: Mission['items']): Mission => ({ id: 'm', name: 'm', items, createdAt: 0, updatedAt: 0 })
-  /** Ground metres from the centre to the edge of the shorter side, minus padding. */
-  const halfViewM = (zoom: number) => metersPerPixel(zoom, drone.lat) * (800 / 2 - 60)
 
-  it('zooms so a drone-centred view just reaches the furthest waypoint', () => {
-    const mission = missionWith([{ type: 'vtolTakeoff', altM: 40 }, { type: 'waypoint', ...at(0, 1500), altM: 60 }, { type: 'returnToLaunch' }])
-    const zoom = zoomToShowMission(drone, mission, drone, { viewportPx })
-    expect(halfViewM(zoom)).toBeCloseTo(1500, -1)
+  it('spans every item, home and the drone', () => {
+    const m = missionWith([{ type: 'vtolTakeoff', altM: 40 }, { type: 'waypoint', ...at(3000, 2000), altM: 60 }, { type: 'returnToLaunch' }])
+    const drone = at(-500, -800)
+    const [[w, s], [e, n]] = missionBounds(m, home, drone)!
+    expect(w).toBeCloseTo(drone.lon, 9)
+    expect(s).toBeCloseTo(drone.lat, 9)
+    expect(e).toBeCloseTo(at(3000, 0).lon, 9)
+    expect(n).toBeCloseTo(at(0, 2000).lat, 9)
   })
 
-  it('counts the outer edge of a loiter circle, and home', () => {
-    const loiter = missionWith([{ type: 'loiter', ...at(1000, 0), altM: 60, radiusM: 500, turns: 1 }])
-    expect(halfViewM(zoomToShowMission(drone, loiter, null, { viewportPx }))).toBeCloseTo(1500, -1)
-
-    const farHome = at(-2000, 0)
-    expect(halfViewM(zoomToShowMission(drone, loiter, farHome, { viewportPx }))).toBeCloseTo(2000, -1)
+  it('reaches the outer edge of a loiter circle', () => {
+    const m = missionWith([{ type: 'loiter', ...at(1000, 0), altM: 60, radiusM: 500, turns: 1 }])
+    const [[w], [e]] = missionBounds(m, null, null)!
+    expect(w).toBeCloseTo(at(500, 0).lon, 6)
+    expect(e).toBeCloseTo(at(1500, 0).lon, 6)
   })
 
-  it('falls back to zoom 15 on the drone when the mission is too big to show usefully', () => {
-    const big = missionWith([{ type: 'waypoint', ...at(0, 30_000), altM: 60 }])
-    expect(zoomToShowMission(drone, big, null, { viewportPx })).toBe(15)
-  })
-
-  it('caps the zoom for a tiny mission, and falls back with no mission', () => {
-    const tiny = missionWith([{ type: 'waypoint', ...at(0, 20), altM: 60 }])
-    expect(zoomToShowMission(drone, tiny, null, { viewportPx })).toBe(17)
-    expect(zoomToShowMission(drone, null, null, { viewportPx })).toBe(15)
+  it('is null with nothing to show', () => {
+    expect(missionBounds(null, null, null)).toBeNull()
   })
 })

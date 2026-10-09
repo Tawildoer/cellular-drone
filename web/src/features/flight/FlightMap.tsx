@@ -1,4 +1,11 @@
-import { Map as MaplibreMap, Marker, setWorkerUrl, type GeoJSONSource, type StyleSpecification } from 'maplibre-gl'
+import {
+  Map as MaplibreMap,
+  Marker,
+  setWorkerUrl,
+  type ExpressionSpecification,
+  type GeoJSONSource,
+  type StyleSpecification,
+} from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import type { Feature, Polygon } from 'geojson'
@@ -22,7 +29,8 @@ import {
   buildTrailLineGeoJson,
   isLappingCurrentLoiter,
   metersPerPixel,
-  zoomToShowMission,
+  missionBounds,
+  MISSION_FIT_MAX_ZOOM,
   type AircraftPose,
   type AltitudePoint,
 } from './flightMapGeo'
@@ -156,6 +164,8 @@ function buildMapStyle(): StyleSpecification {
 const TRAIL_SOURCE = 'trail'
 const FENCE_SOURCE = 'fence'
 const MISSION_WAYPOINT_MARKERS_SOURCE = 'mission-waypoint-markers'
+/** Planned waypoints in the route's violet; flown-through ones green, as done. */
+const WAYPOINT_COLOR: ExpressionSpecification = ['case', ['boolean', ['get', 'done'], false], '#2ecc71', '#9f6fff']
 const MISSION_FLOATING_PATH_SOURCE = 'mission-floating-path'
 const MISSION_LOITER_RINGS_SOURCE = 'mission-loiter-rings'
 const AIRCRAFT_MARKER_SOURCE = 'aircraft-marker'
@@ -438,7 +448,7 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       // Small blocks hovering at each waypoint/loiter's altitude — a flat
       // line layer can't show height, so this borrows the same
       // fill-extrusion mechanism used for 3D buildings (flightMapGeo.ts).
-      // Disappears once the vehicle has flown through it (missionProgress).
+      // Turns green once the vehicle has flown through it (missionProgress).
       map.addSource(MISSION_WAYPOINT_MARKERS_SOURCE, {
         type: 'geojson',
         ...OVERLAY_3D_SOURCE,
@@ -450,7 +460,7 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
         source: MISSION_WAYPOINT_MARKERS_SOURCE,
         layout: { visibility: 'none' }, // by camera zoom: syncZoomLayers
         paint: {
-          'fill-extrusion-color': '#9f6fff',
+          'fill-extrusion-color': WAYPOINT_COLOR,
           'fill-extrusion-height': ['get', 'top'],
           'fill-extrusion-base': ['get', 'base'],
           'fill-extrusion-opacity': 0.85,
@@ -542,7 +552,7 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
         id: MISSION_WAYPOINTS_FLAT_SOURCE,
         type: 'circle',
         source: MISSION_WAYPOINTS_FLAT_SOURCE,
-        paint: { 'circle-radius': 4, 'circle-color': '#9f6fff' },
+        paint: { 'circle-radius': 4, 'circle-color': WAYPOINT_COLOR },
       })
 
       // The aircraft indicator itself, floating at its actual altitude and
@@ -705,11 +715,10 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
   }
 
   /** First click squares the camera up (north-up, straight down); once
-   * already square, the next click centers on the drone, zoomed so the whole
-   * mission is in view (or zoom 15 on the drone when the mission is too big
-   * for that to be useful, zoomToShowMission). Checked against the map's
-   * actual current orientation, not a separate counter, so it stays correct
-   * even if the user re-tilts by hand in between clicks. */
+   * already square, the next click fits the whole mission in view: every
+   * item, loiter circles, home and the drone (missionBounds). Checked
+   * against the map's actual current orientation, not a separate counter, so
+   * it stays correct even if the user re-tilts by hand in between clicks. */
   function handleRecenter() {
     const map = mapRef.current
     if (!map) return
@@ -717,14 +726,22 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
     const isSquare = Math.abs(map.getBearing()) < 0.5 && Math.abs(map.getPitch()) < 0.5
     if (!isSquare) {
       map.easeTo({ pitch: 0, bearing: 0, duration: 400 })
-    } else if (vehicleState) {
-      const drone = { lat: vehicleState.position.lat, lon: vehicleState.position.lon }
-      const container = map.getContainer()
-      const zoom = zoomToShowMission(drone, mission, vehicleState.home, {
-        viewportPx: { width: container.clientWidth, height: container.clientHeight },
-      })
-      map.easeTo({ center: [drone.lon, drone.lat], zoom, duration: 600 })
+      return
     }
+    const drone = vehicleState ? { lat: vehicleState.position.lat, lon: vehicleState.position.lon } : null
+    const bounds = missionBounds(mission, vehicleState?.home ?? null, drone)
+    if (!bounds) return
+    // Keep the route clear of the overlay panels: the HUD across the top,
+    // the progress and mission panels down the left, the command bar along
+    // the bottom. Scaled to the map's size so a small window still fits.
+    const { clientWidth: w, clientHeight: h } = map.getContainer()
+    const padding = {
+      top: Math.min(140, h * 0.2),
+      bottom: Math.min(140, h * 0.2),
+      left: Math.min(330, w * 0.3),
+      right: Math.min(80, w * 0.08),
+    }
+    map.fitBounds(bounds, { padding, maxZoom: MISSION_FIT_MAX_ZOOM, duration: 600 })
   }
 
   return (
@@ -759,7 +776,7 @@ export function FlightMap({ mission = null, onMapClick }: FlightMapProps) {
       <button
         type="button"
         onClick={handleRecenter}
-        aria-label="Square up the camera, then center on the drone with its mission in view"
+        aria-label="Square up the camera, then fit the whole mission in view"
         className="glass-panel absolute right-4 top-24 z-10 flex h-8 w-8 items-center justify-center transition hover:ring-2 hover:ring-primary"
       >
         <LocateFixed size={14} style={{ color: 'var(--primary)' }} aria-hidden />
