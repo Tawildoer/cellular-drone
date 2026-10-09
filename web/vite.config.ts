@@ -18,6 +18,11 @@ export default defineConfig({
     },
   },
   server: {
+    // The local console always lives at http://localhost:5173: fail rather
+    // than drift to another port if it's taken. (e2e:sitl asks for 5174 on
+    // purpose, so it can run beside this one.)
+    port: 5173,
+    strictPort: true,
     fs: {
       // The repo-level golden files (testdata/mission-translation) are shared
       // with the Go agent, so the translator tests read them from outside web/.
