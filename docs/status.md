@@ -20,6 +20,8 @@ The software is ahead of the hardware, as planned. **Phase 1 runs end to end aga
 
 <span class="chip done">done</span> **Gimbal, free fly, battery and weather** (in the console and the mock; the agent is next): gimbal line of sight and click-to-lock, free fly from the map, the drone returning home on its battery estimate with warnings before it, wind and rain on the map with wind-aware estimates (ADR-0023 to ADR-0026).
 
+<span class="chip done">done</span> **Mac app** (ADR-0027): *Ground Control*, an Electron shell on the same web build, updated over the air by every deploy and able to start offline. The web app stays first-class.
+
 <span class="chip done">done</span> **Mission planning tools**: height profile over real terrain with clearance warnings, distance and time at ArduPlane's figures, and *Follow terrain at X m* (ADR-0021).
 
 <span class="chip done">done</span> **In-browser mock drone and `mock-agent`**: the whole UI was built against it; it now also reports simulated LTE conditions. Public demo on Cloudflare.

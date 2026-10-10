@@ -2,6 +2,13 @@
 
 What each working session delivered, newest first. Commit hashes link to the change on GitHub. Add an entry when work lands; tick the matching boxes in [the plan](PLAN.md) in the same change.
 
+## 2026-10-10: Mac app
+
+- **Ground Control** (ADR-0027): an Electron Mac app in `desktop/` running the same UI build as the web app, which stays first-class for phones and any browser. Ad-hoc signed `.dmg` for Apple Silicon, cell-tower icon.
+- **Over-the-air updates**: `npm run deploy` now also publishes `app-manifest.json` (every UI file with its SHA-256). The app downloads and checks new versions, then offers *Update ready · Reload*; it never reloads mid-flight. Only shell changes need a new `.dmg`.
+- **Starts offline** from the newest copy it has, or the one built in. *Develop → Live from Local Dev Server* (⌘⇧D) loads localhost:5173.
+- **Native bridge**: the page stays sandboxed; `desktop/src/preload.ts` → `web/src/app/desktopBridge.ts` is the whole native surface, ready for the serial ground radio, offline maps and background alerts.
+
 ## 2026-10-10: gimbal, free fly, battery and weather
 
 All in the console and the mock drone; the agent rejects the new commands until it implements them, and the battery-return FC script is still to write and prove in SITL.

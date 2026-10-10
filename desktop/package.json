@@ -1,0 +1,54 @@
+{
+  "name": "cellular-drone-desktop",
+  "productName": "Ground Control",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ground Control: the Mac app for the cellular drone console: the web UI, updated over the air (ADR-0027).",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "bundle": "npm --prefix ../web run build && npm --prefix ../web run build:manifest && node scripts/copy-bundle.mjs",
+    "start": "npm run build && electron .",
+    "dist": "npm run bundle && npm run build && electron-builder --mac && rm -rf release/mac-arm64"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3",
+    "typescript": "~6.0.2"
+  },
+  "build": {
+    "appId": "com.tomwildoer.cellulardrone",
+    "productName": "Ground Control",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "app-bundle",
+        "to": "app-bundle"
+      }
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.utilities",
+      "icon": "build/icon.icns",
+      "identity": "-",
+      "hardenedRuntime": false
+    }
+  },
+  "allowScripts": {
+    "electron@44.4.5": true
+  }
+}

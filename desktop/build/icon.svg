@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b2030"/>
+      <stop offset="1" stop-color="#07080d"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.35"/>
+      <stop offset="0.6" stop-color="#ffffff" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.12"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- macOS icon grid: an 824 px rounded square, centred. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="183.5" fill="none" stroke="url(#rim)" stroke-width="3"/>
+  <g fill="none" stroke="#00d4ff" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
+    <!-- Signal arcs either side of the mast head. -->
+    <g stroke-width="26" opacity="0.95">
+      <path d="M 432 262 A 96 96 0 0 0 432 402"/>
+      <path d="M 592 262 A 96 96 0 0 1 592 402"/>
+    </g>
+    <g stroke-width="24" opacity="0.6">
+      <path d="M 370 214 A 166 166 0 0 0 370 450"/>
+      <path d="M 654 214 A 166 166 0 0 1 654 450"/>
+    </g>
+    <!-- The lattice mast. -->
+    <g stroke-width="22">
+      <path d="M 512 360 L 402 806"/>
+      <path d="M 512 360 L 622 806"/>
+      <path d="M 486 466 L 538 466 M 460 572 L 564 572 M 433 682 L 591 682"/>
+      <path d="M 486 466 L 564 572 L 433 682 M 538 466 L 460 572 L 591 682"/>
+      <path d="M 372 806 L 652 806"/>
+    </g>
+    <!-- Antenna head. -->
+    <circle cx="512" cy="332" r="30" fill="#00d4ff" stroke="none"/>
+  </g>
+</svg>

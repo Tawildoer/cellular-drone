@@ -24,7 +24,8 @@ A fixed-wing **VTOL (ArduPlane QuadPlane)** that flies **autonomous missions onl
 - `agent/`: drone agent (Go). Runs on a laptop against SITL, or on the Orange Pi 5 (Pi 5 stand-in for link work, ADR-0014).
 - `mock-agent/`: dev-only standalone Node process standing in for `agent/` (ADR-0012) — runs the same simulated-VTOL engine as `MockLink`, behind a WebSocket, so the drone's state survives browser reloads. Not the real agent.
 - `server/`: auth + signalling + API (TypeScript/Node 24), docker-compose, Caddy, coturn
-- `web/`: React + Vite + TS frontend (MapLibre), laptop-primary for now (operator's base station); phone layout deferred, same components
+- `web/`: React + Vite + TS frontend (MapLibre), laptop-primary for now (operator's base station); phone layout deferred, same components. Stays first-class: phones and any browser use it.
+- `desktop/`: the Mac app (ADR-0027), an Electron shell running the same web build, updated over the air from `app-manifest.json` published by `npm run deploy`. Only shell changes need a new `.dmg`.
 
 ## Conventions
 - **Don't run verification (`npm run build`/`lint`/`test`, Playwright/live-browser checks) after a change without the user's confirmation first.** Ask before running it, don't just run it automatically.

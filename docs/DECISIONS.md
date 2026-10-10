@@ -267,3 +267,17 @@ Raw ICE detail lives in the agent's JSONL log and the browser console (`[WebRtcL
 - Forecast wind, not measured: it's a model at 80 m on a grid of a few km, and won't show local gusts or terrain effects. Where the aircraft reports its own estimate, that's used instead for the tile, the tint and the estimates.
 - One wind for a whole route is a simplification: fine across a few km, less so over a long mission.
 - Open-Meteo's free tier is for non-commercial use, with a daily request limit; fine for a hobby console, revisit if that changes.
+
+## ADR-0027: A Mac app alongside the web app, updated over the air from the same deploy (2026-10-10, accepted)
+**Context:** The operator wants a standalone Mac app for the laptop base station (and, later, native features: the serial ground radio for farms, offline maps, alerts in the background), while keeping the web app for phones and any browser. It mustn't fork the UI or slow down shipping: a change should reach both at once. Not through the App Store.
+**Decision:**
+- **The web app stays, and stays first-class.** It's how phones fly, and how anyone watches from a browser. The Mac app runs **the same UI build**: one codebase, one deploy.
+- **The Mac app is an Electron shell** (`desktop/`). Electron, not Tauri, because it bundles the Chromium the console is built and tested in: WebRTC, WebGL and the glass effects behave identically, where Tauri's system WebKit view differs. Size doesn't matter here.
+- **The UI updates over the air.** `npm run deploy` publishes `app-manifest.json` (every UI file with its SHA-256). The app checks it at launch, every 10 minutes and on focus, downloads a newer build in the background, checks every file, keeps it, and offers **Update ready · Reload**. It never reloads by itself (an update mustn't interrupt a flight); *Later* applies it at the next launch.
+- **It starts without the internet** from the newest copy it has, or the one built into the app. The UI is served from a fixed `app://cellular-drone` origin so its saved missions and settings survive updates.
+- **Native features go through a narrow bridge.** The page is sandboxed with no Node or file access; `desktop/src/preload.ts` is the whole native surface (today: version, update ready, reload). The UI detects the bridge and otherwise behaves exactly as on the web.
+- **Distribution:** an ad-hoc signed `.dmg` for Apple Silicon, not notarised. Shell changes (rare) need a new `.dmg`; UI changes never do.
+**Consequences:**
+- A bad deploy reaches the Mac app too, though only when the operator chooses to reload; the previous version stays on disk.
+- Downloads are checked against the manifest over HTTPS, which protects against corruption, not a compromised site. Signing the manifest (an Ed25519 key, as for session tokens) is the step up if the app starts controlling real aircraft through native links.
+- The deployed build is the mock demo build today (the link is chosen at build time), so the Mac app flies the simulated drone until the link choice moves to run time with the server (Phase 1c).
