@@ -3,9 +3,9 @@ import type { VehicleLink } from '../link'
 import { MockLink } from '../link/mock'
 import { WebRtcLink } from '../link/webrtc'
 import { WsLink } from '../link/ws'
-import type { AuthClient, FlightLogRepository, MissionRepository, MissionTranslator, TerrainService, WeatherService } from '../services'
+import type { AuthClient, CoverageRepository, FlightLogRepository, MissionRepository, MissionTranslator, TerrainService, WeatherService } from '../services'
 import { ArduPilotMissionTranslator } from '../services/ardupilot'
-import { LocalStorageFlightLogRepository, LocalStorageMissionRepository } from '../services/local-storage'
+import { LocalStorageCoverageRepository, LocalStorageFlightLogRepository, LocalStorageMissionRepository } from '../services/local-storage'
 import { MapTilerTerrainService } from '../services/maptiler'
 import { PublicWeatherService } from '../services/weather'
 import { MockAuthClient } from '../services/mock'
@@ -71,6 +71,8 @@ export interface AppServices {
   missionRepository: MissionRepository
   /** Finished flights, for the flight log. */
   flightLogRepository: FlightLogRepository
+  /** Cell coverage measured in flight, for colouring the planned route. */
+  coverageRepository: CoverageRepository
   /** How missions look to the flight stack, for planner preview and export
    * (ADR-0017). The agent does the authoritative translation on upload. */
   missionTranslator: MissionTranslator
@@ -129,6 +131,7 @@ export function createAppServices(): AppServices {
     vehicles: VEHICLES,
     missionRepository: new LocalStorageMissionRepository(),
     flightLogRepository: new LocalStorageFlightLogRepository(),
+    coverageRepository: new LocalStorageCoverageRepository(),
     missionTranslator: new ArduPilotMissionTranslator(),
     terrain: typeof maptilerKey === 'string' && maptilerKey ? new MapTilerTerrainService(maptilerKey) : null,
     weather: new PublicWeatherService(),

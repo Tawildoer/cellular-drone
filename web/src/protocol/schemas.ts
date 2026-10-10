@@ -108,6 +108,7 @@ export const vehicleStateSchema = z.object({
   gimbal: gimbalAttitudeSchema.optional(),
   freeFly: freeFlyStateSchema.optional(),
   wind: z.object({ speedMps: z.number(), fromDeg: z.number() }).optional(),
+  cellular: z.object({ rsrpDbm: z.number(), sinrDb: z.number(), band: z.string().optional() }).optional(),
   updatedAt: z.number(),
 })
 

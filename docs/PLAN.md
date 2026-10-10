@@ -36,6 +36,7 @@ Order: **frontend first against a mock vehicle**, then the real backend undernea
 - [x] UI: flight log (each flight's stats, kept in the browser), follow-drone camera (chase 30° or top-down), progress panel only during a mission (2026-10-09)
 - [x] UI: operator awareness: mission progress (item, distance, time left), way home, failsafe banners, stale-telemetry warning with the aircraft faded on the map, commands that show pending/accepted and say why they're disabled (2026-10-09)
 - [x] UI: gimbal line of sight and click-to-lock, free fly from the map, battery return and warnings, weather overlays with wind-aware estimates (ADR-0023 to ADR-0026, 2026-10-10; mock only)
+- [x] UI: colour the trail and planned route by wind, cell signal, height or speed; cell signal in telemetry (simulated by the mock); coverage remembered from earlier flights (ADR-0028, 2026-10-10)
 - [x] Mac app (`desktop/`, ADR-0027): Electron shell on the same web build, over-the-air UI updates from the deploy, starts offline (2026-10-10)
 - [ ] Mac app native features: serial ground radio, offline map packs, background alerts; run-time link choice
 - [ ] Dev panel for MockLink fault injection

@@ -39,6 +39,8 @@ export class MockLink implements VehicleLink {
   private connectedAtMs: number | null = null
   private timer: ReturnType<typeof setInterval> | null = null
   private conditions: LinkConditions = INITIAL_LINK_CONDITIONS
+  /** The simulated modem's SINR, which the link's delay and loss follow. */
+  private sinrDb: number | undefined
 
   private videoStream: MediaStream | null = null
   private videoDrawTimer: ReturnType<typeof setInterval> | null = null
@@ -203,7 +205,7 @@ export class MockLink implements VehicleLink {
 
     this.emitState()
     // Real time, not sim time: the link doesn't speed up with the sim.
-    this.conditions = nextLinkConditions(this.conditions, this.tickMs / 1000)
+    this.conditions = nextLinkConditions(this.conditions, this.tickMs / 1000, Math.random, this.sinrDb)
     this.setStatus({
       state: 'connected',
       path: 'direct',
@@ -222,9 +224,11 @@ export class MockLink implements VehicleLink {
   }
 
   private emitState(): void {
+    const state = this.engine.buildVehicleState()
+    this.sinrDb = state.cellular?.sinrDb
     if (Math.random() < this.engine.getFaultConfig().lossRate) return
 
-    const decoded = decodeMessage(encodeMessage(createMessage('telemetry.state', this.engine.buildVehicleState())))
+    const decoded = decodeMessage(encodeMessage(createMessage('telemetry.state', state)))
     if (decoded && decoded.type === 'telemetry.state') {
       for (const cb of this.stateListeners) cb(decoded.payload)
     }

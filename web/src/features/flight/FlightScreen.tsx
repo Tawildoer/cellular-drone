@@ -15,6 +15,7 @@ import { MenuDrawer } from './MenuDrawer'
 import { RcOverrideBanner } from './RcOverrideBanner'
 import { FailsafeBanners, TelemetryStaleBanner } from './StatusBanners'
 import { useFlightMission } from './useFlightMission'
+import { useCoverageRecorder } from './useCoverageRecorder'
 import { useFlightRecorder } from './useFlightRecorder'
 import { useGimbalLock } from './useGimbalLock'
 import { FreeFlyBanner, FreeFlyButton, useFreeFly, WaypointMenu, type WaypointMenuAnchor } from './FreeFly'
@@ -62,6 +63,7 @@ export function FlightScreen({ onBack }: { onBack: () => void }) {
   const freeFlying = !planning && freeFly.active
   const mission = useFlightMission(planning)
   useFlightRecorder(mission)
+  useCoverageRecorder()
 
   const draft = useMissionStore((s) => s.draft)
   // Where to ask for the forecast wind with no drone to ask near: the route.

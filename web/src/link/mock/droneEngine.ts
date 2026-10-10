@@ -39,6 +39,7 @@ import {
   type FlightPhysicsConfig,
   type SimState,
 } from './sim'
+import { simulatedCellSignal } from './cellSignal'
 import { CALM_WIND, DEFAULT_LOOK_AHEAD_M, DEFAULT_MAX_TURN_RATE_DEG_PER_S, type Wind } from './flightDynamics'
 
 export interface FailsafeFaultConfig {
@@ -395,6 +396,8 @@ export class DroneEngine {
       // estimate would report. Calm (the default) reports nothing, so the
       // console falls back to the forecast.
       wind: this.fault.wind.speedMps > 0 ? { speedMps: this.fault.wind.speedMps, fromDeg: this.fault.wind.directionDeg } : undefined,
+      // What the agent will read from the LTE modem: towers round home.
+      cellular: simulatedCellSignal(this.sim.home, this.sim.position, this.sim.position.altRelM),
       updatedAt: Date.now(),
     }
   }

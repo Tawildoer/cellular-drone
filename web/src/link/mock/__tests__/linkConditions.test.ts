@@ -27,3 +27,25 @@ describe('mock link conditions', () => {
     expect(Math.max(...rtts)).toBeGreaterThan(200)
   })
 })
+
+describe('mock link conditions with a poor signal', () => {
+  it('have a longer round trip and more loss at low SINR', () => {
+    const mean = (sinrDb: number | undefined) => {
+      const rng = seeded(7)
+      let c = INITIAL_LINK_CONDITIONS
+      let rtt = 0
+      let loss = 0
+      for (let i = 0; i < 10_000; i++) {
+        c = nextLinkConditions(c, 0.1, rng, sinrDb)
+        rtt += c.rttMs
+        loss += c.packetLossPct
+      }
+      return { rtt: rtt / 10_000, loss: loss / 10_000 }
+    }
+    const good = mean(15)
+    const poor = mean(-2)
+    expect(poor.rtt).toBeGreaterThan(good.rtt + 50)
+    expect(poor.loss).toBeGreaterThan(good.loss)
+    expect(mean(undefined).rtt).toBeCloseTo(good.rtt, 0)
+  })
+})

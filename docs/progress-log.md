@@ -2,6 +2,12 @@
 
 What each working session delivered, newest first. Commit hashes link to the change on GitHub. Add an entry when work lands; tick the matching boxes in [the plan](PLAN.md) in the same change.
 
+## 2026-10-10: path colours and cell coverage
+
+- **Colour the paths** (ADR-0028): a *Path* setting under the map controls colours the flown trail and the planned route by wind along the track, cell signal, height above home or ground speed, each with its key. Coloured, the trail keeps the whole flight.
+- **Cell signal in telemetry**: `cellular { rsrpDbm, sinrDb, band }`, which the agent will read from the modem. The mock simulates four towers round home: stronger signal but more interference up high, weak patches from the landscape, and a link that slows and drops more packets where SINR is low.
+- **Coverage memory**: every flight's readings are kept (per ~30 m square and height band), and the planned route is coloured by what earlier flights measured there; grey where it hasn't flown.
+
 ## 2026-10-10: Mac app
 
 - **Ground Control** (ADR-0027): an Electron Mac app in `desktop/` running the same UI build as the web app, which stays first-class for phones and any browser. Ad-hoc signed `.dmg` for Apple Silicon, cell-tower icon.

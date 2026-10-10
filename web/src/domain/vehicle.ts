@@ -111,6 +111,16 @@ export interface FreeFlyState {
   circling: boolean
 }
 
+/** The air unit's LTE modem, as it reports itself (not MAVLink: the agent
+ * reads the modem). RSRP is signal strength, SINR how clean it is: up high
+ * the drone sees many towers, so strength is often fine while SINR drops. */
+export interface CellularSignal {
+  rsrpDbm: number
+  sinrDb: number
+  /** LTE band of the serving cell, e.g. "B28". */
+  band?: string
+}
+
 export interface HomePosition {
   lat: number
   lon: number
@@ -143,6 +153,8 @@ export interface VehicleState {
   /** The aircraft's own wind estimate (ArduPilot's `WIND`), measured where
    * it is; absent when it doesn't report one (ADR-0026). */
   wind?: WindVector
+  /** The modem's signal; absent when the agent can't read it. */
+  cellular?: CellularSignal
   /** epoch ms */
   updatedAt: number
 }

@@ -8,10 +8,10 @@ import {
 } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
-import type { Feature, Polygon } from 'geojson'
+import type { Feature, FeatureCollection, Polygon } from 'geojson'
 import { LocateFixed, Navigation } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { useVehicleStore, useWeatherService } from '../../app/store-hooks'
+import { useCoverage, useVehicleStore, useWeatherService } from '../../app/store-hooks'
 import { useTelemetryStale } from './telemetryAge'
 import { createGimbalRayLayer, type GimbalRayLayer } from './gimbalRayLayer'
 import { createProjectionProbe } from './projectionProbe'
@@ -19,7 +19,7 @@ import { useWeatherOverlay, type WeatherOverlay } from './useWeatherOverlay'
 import { WeatherLegend } from './WeatherLegend'
 import { WindStreaks } from './WindStreaks'
 import { useRouteWind } from './forecastWind'
-import type { GeoPoint, GimbalAttitude, Mission, VehicleState, WindVector } from '../../domain'
+import { SITL_PERFORMANCE, haversineDistanceM, type GeoPoint, type GimbalAttitude, type Mission, type PathColorMetric, type PathColorScale, type VehicleState, type WindVector } from '../../domain'
 import {
   aircraftMarkerScale,
   appendTrailPoint,
@@ -46,7 +46,18 @@ import {
   MISSION_FIT_MAX_ZOOM,
   type AircraftPose,
   type AltitudePoint,
+  type RouteValue,
 } from './flightMapGeo'
+import {
+  pathColorExpression,
+  pathValues,
+  readPathColorMetric,
+  roundedScale,
+  routeValueFn,
+  savePathColorMetric,
+  trailValueFn,
+} from './pathColoring'
+import { PathColorControl } from './PathColorControl'
 
 const STREET_LAYER = 'street'
 const SATELLITE_LAYER = 'satellite'
@@ -264,6 +275,7 @@ function setSourceData(map: MaplibreMap, id: string, data: Parameters<GeoJSONSou
 }
 
 const EMPTY_POLYGON: Feature<Polygon> = { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [] } }
+const EMPTY_COLLECTION: FeatureCollection = { type: 'FeatureCollection', features: [] }
 
 // The zoomed-out aircraft (see FLAT_OVERLAY_MAX_ZOOM): an HTML marker drawn
 // over the map canvas, so it can't clip into the terrain the way the 3D arrow
@@ -333,23 +345,30 @@ function floatingPathGeoJson(
   lapping: boolean,
   metersPerPx: number,
   wind: WindVector | null,
+  valueOf?: RouteValue,
 ) {
   const clearedBeforeIndex = pathClearedBeforeIndex(vehicleState)
   const home = homeAltitudePoint(vehicleState, mission)
   if (lapping && clearedBeforeIndex !== undefined) {
-    return buildMissionFloatingPathGeoJson(mission, home, clearedBeforeIndex + 1, undefined, metersPerPx, wind)
+    return buildMissionFloatingPathGeoJson(mission, home, clearedBeforeIndex + 1, undefined, metersPerPx, wind, valueOf)
   }
-  return buildMissionFloatingPathGeoJson(mission, home, clearedBeforeIndex, dronePoint(vehicleState), metersPerPx, wind)
+  return buildMissionFloatingPathGeoJson(mission, home, clearedBeforeIndex, dronePoint(vehicleState), metersPerPx, wind, valueOf)
 }
 
 // The flat counterpart, with the same lapping rule.
-function flatPathGeoJson(mission: Mission | null, vehicleState: VehicleState | null, lapping: boolean, wind: WindVector | null) {
+function flatPathGeoJson(
+  mission: Mission | null,
+  vehicleState: VehicleState | null,
+  lapping: boolean,
+  wind: WindVector | null,
+  valueOf?: RouteValue,
+) {
   const clearedBeforeIndex = pathClearedBeforeIndex(vehicleState)
   const home = homeAltitudePoint(vehicleState)
   if (lapping && clearedBeforeIndex !== undefined) {
-    return buildMissionPathLinesGeoJson(mission, home, clearedBeforeIndex + 1, undefined, wind)
+    return buildMissionPathLinesGeoJson(mission, home, clearedBeforeIndex + 1, undefined, wind, valueOf)
   }
-  return buildMissionPathLinesGeoJson(mission, home, clearedBeforeIndex, dronePoint(vehicleState), wind)
+  return buildMissionPathLinesGeoJson(mission, home, clearedBeforeIndex, dronePoint(vehicleState), wind, valueOf)
 }
 
 /** The planned path's colour (ADR-0026): purple, or tinted by the leg's
@@ -366,6 +385,16 @@ const PATH_COLOR: ExpressionSpecification = [
   '#0ca30c',
   '#9f6fff',
 ]
+
+/** The trail's usual colours: cyan, darkening as pieces expire. */
+const TRAIL_COLOR: ExpressionSpecification = ['interpolate', ['linear'], ['get', 'fade'], 0, '#0b2a33', 0.6, '#0a8fb0', 1, '#00d4ff']
+const TRAIL_FLAT_COLOR = '#00d4ff'
+
+/** Coloured by a value, the trail keeps the whole flight (not just the last
+ * minute) as a map of what was measured: a point every this many metres,
+ * up to a cap. */
+const FLIGHT_TRAIL_SPACING_M = 10
+const MAX_FLIGHT_TRAIL_POINTS = 4000
 
 // The overlays are built in metres; this lets them keep a minimum on-screen
 // size however far out the map is zoomed (flightMapGeo.ts, atLeastPx).
@@ -512,6 +541,9 @@ export function FlightMap({ mission = null, onMapClick, onMapDoubleClick, onWayp
   const homeMarkerRef = useRef<Marker | null>(null)
   const aircraftMarkerRef = useRef<Marker | null>(null)
   const trailRef = useRef<AltitudePoint[]>([])
+  /** The whole flight, thinned out, for the coloured trail. */
+  const flightTrailRef = useRef<AltitudePoint[]>([])
+  const wasArmedRef = useRef(false)
   const hasCenteredRef = useRef(false)
   const loadedRef = useRef(false)
   const lappingLatchRef = useRef<{ missionId: string; index: number } | null>(null)
@@ -526,6 +558,19 @@ export function FlightMap({ mission = null, onMapClick, onMapDoubleClick, onWayp
   useEffect(() => {
     routeWindRef.current = routeWind
   }, [routeWind])
+  /** What the trail and route are coloured by (pathColoring.ts). */
+  const [pathColor, setPathColor] = useState<PathColorMetric>(readPathColorMetric)
+  const pathColorRef = useRef(pathColor)
+  const [pathScale, setPathScale] = useState<PathColorScale | null>(null)
+  const coverage = useCoverage((s) => s.index)
+  const coverageRef = useRef(coverage)
+  /** The last flat trail and route built, whose values set the scale, and
+   * the paint last applied, so it's only re-set when it changes. */
+  const builtRef = useRef<{ trail: FeatureCollection; route: FeatureCollection; paint: string }>({
+    trail: EMPTY_COLLECTION,
+    route: EMPTY_COLLECTION,
+    paint: '',
+  })
   // Under the flight overlays: the route and aircraft stay on top.
   const { status: weatherStatus, windGrid } = useWeatherOverlay(loadedMap, weatherOverlay, weatherService, TRAIL_SOURCE)
   const [followView, setFollowView] = useState<FollowView>(readFollowView)
@@ -557,6 +602,61 @@ export function FlightMap({ mission = null, onMapClick, onMapDoubleClick, onWayp
   useEffect(() => {
     missionRef.current = mission
   }, [mission])
+  /** The route's value for the path colour, from the latest setting, wind
+   * and coverage (refs, so the map's own handlers can call it). */
+  function routeValue(): RouteValue | undefined {
+    return routeValueFn(pathColorRef.current, {
+      wind: routeWindRef.current,
+      cruiseMps: SITL_PERFORMANCE.cruiseMps,
+      coverage: coverageRef.current,
+    })
+  }
+
+  /** The trail as drawn: the last minute, fading, as usual; or, coloured
+   * by a value, the whole flight to where the drone is now. */
+  function trailGeoJson(map: MaplibreMap, nowMs: number) {
+    const metric = pathColorRef.current
+    if (metric === 'off') {
+      return {
+        floating: buildFloatingTrailGeoJson(trailRef.current, viewMetersPerPx(map), nowMs),
+        flat: buildTrailLineGeoJson(trailRef.current, nowMs),
+      }
+    }
+    const latest = trailRef.current.at(-1)
+    const flight = flightTrailRef.current
+    const shown = latest && flight.at(-1) !== latest && flight.length > 0 ? [...flight, latest] : flight
+    const valueOf = trailValueFn(metric)
+    return {
+      floating: buildFloatingTrailGeoJson(shown, viewMetersPerPx(map), undefined, valueOf),
+      flat: buildTrailLineGeoJson(shown, undefined, valueOf),
+    }
+  }
+
+  function setTrail(map: MaplibreMap, nowMs: number) {
+    const { floating, flat } = trailGeoJson(map, nowMs)
+    setSourceData(map, TRAIL_SOURCE, floating)
+    setSourceData(map, TRAIL_FLAT_SOURCE, flat)
+    builtRef.current.trail = flat
+    applyPathColor(map)
+  }
+
+  /** Paints the trail and route for the setting, with a scale from the
+   * values they now carry; the usual colours when it's off. */
+  function applyPathColor(map: MaplibreMap) {
+    const metric = pathColorRef.current
+    const scale = roundedScale(metric, pathValues(builtRef.current.trail, builtRef.current.route))
+    const expression = pathColorExpression(metric, scale)
+    const key = JSON.stringify(expression)
+    if (key === builtRef.current.paint) return
+    builtRef.current.paint = key
+    setPathScale(scale)
+    if (!map.getLayer(TRAIL_SOURCE)) return
+    map.setPaintProperty(TRAIL_SOURCE, 'fill-extrusion-color', expression ?? TRAIL_COLOR)
+    map.setPaintProperty(TRAIL_FLAT_SOURCE, 'line-color', expression ?? TRAIL_FLAT_COLOR)
+    map.setPaintProperty(MISSION_FLOATING_PATH_SOURCE, 'fill-extrusion-color', expression ?? PATH_COLOR)
+    map.setPaintProperty(MISSION_PATH_FLAT_SOURCE, 'line-color', expression ?? PATH_COLOR)
+  }
+
   // Scale the overlays were last rebuilt at during a zoom gesture.
   const lastZoomMetersPerPxRef = useRef(Infinity)
 
@@ -752,7 +852,7 @@ export function FlightMap({ mission = null, onMapClick, onMapDoubleClick, onWayp
         layout: { visibility: 'none' }, // by camera zoom: syncZoomLayers
         paint: {
           // Expiring segments darken towards the map (buildFloatingTrailGeoJson).
-          'fill-extrusion-color': ['interpolate', ['linear'], ['get', 'fade'], 0, '#0b2a33', 0.6, '#0a8fb0', 1, '#00d4ff'],
+          'fill-extrusion-color': TRAIL_COLOR,
           'fill-extrusion-height': ['get', 'top'],
           'fill-extrusion-base': ['get', 'base'],
           'fill-extrusion-opacity': 1,
@@ -798,7 +898,7 @@ export function FlightMap({ mission = null, onMapClick, onMapDoubleClick, onWayp
       map.addSource(MISSION_FLOATING_PATH_SOURCE, {
         type: 'geojson',
         ...OVERLAY_3D_SOURCE,
-        data: floatingPathGeoJson(mission, vehicleState, false, viewMetersPerPx(map), routeWindRef.current),
+        data: floatingPathGeoJson(mission, vehicleState, false, viewMetersPerPx(map), routeWindRef.current, routeValue()),
       })
       map.addLayer({
         id: MISSION_FLOATING_PATH_SOURCE,
@@ -849,9 +949,9 @@ export function FlightMap({ mission = null, onMapClick, onMapDoubleClick, onWayp
         type: 'line',
         source: TRAIL_FLAT_SOURCE,
         layout: { 'line-join': 'round', 'line-cap': 'butt' },
-        paint: { 'line-color': '#00d4ff', 'line-width': 2.5, 'line-opacity': ['get', 'fade'] },
+        paint: { 'line-color': TRAIL_FLAT_COLOR, 'line-width': 2.5, 'line-opacity': ['get', 'fade'] },
       })
-      map.addSource(MISSION_PATH_FLAT_SOURCE, { type: 'geojson', data: flatPathGeoJson(mission, vehicleState, false, routeWindRef.current) })
+      map.addSource(MISSION_PATH_FLAT_SOURCE, { type: 'geojson', data: flatPathGeoJson(mission, vehicleState, false, routeWindRef.current, routeValue()) })
       map.addLayer({
         id: MISSION_PATH_FLAT_SOURCE,
         type: 'line',
@@ -935,6 +1035,8 @@ export function FlightMap({ mission = null, onMapClick, onMapDoubleClick, onWayp
       })
 
       syncZoomLayers(map)
+      builtRef.current.paint = ''
+      applyPathColor(map)
       if (map.getSource(BUILDINGS_SOURCE)) {
         map.setSourceTileLodParams(BUILDINGS_TILE_LOD.maxZoomLevelsOnScreen, BUILDINGS_TILE_LOD.tileCountMaxMinRatio, BUILDINGS_SOURCE)
       }
@@ -961,10 +1063,10 @@ export function FlightMap({ mission = null, onMapClick, onMapDoubleClick, onWayp
       setSourceData(
         map,
         MISSION_FLOATING_PATH_SOURCE,
-        floatingPathGeoJson(mission, vehicleState, lappingLatchRef.current !== null, metersPerPx, routeWindRef.current),
+        floatingPathGeoJson(mission, vehicleState, lappingLatchRef.current !== null, metersPerPx, routeWindRef.current, routeValue()),
       )
       setSourceData(map, MISSION_LOITER_RINGS_SOURCE, buildMissionLoiterRingsGeoJson(mission, pathClearedBeforeIndex(vehicleState), metersPerPx))
-      setSourceData(map, TRAIL_SOURCE, buildFloatingTrailGeoJson(trailRef.current, metersPerPx, Date.now()))
+      setSourceData(map, TRAIL_SOURCE, trailGeoJson(map, Date.now()).floating)
       setSourceData(map, AIRCRAFT_MARKER_SOURCE, aircraftGeoJson(map, vehicleState))
       if (!followingRef.current) setGimbalRay(map, gimbalLayerRef.current, aircraftPose(vehicleState), vehicleState?.gimbal)
     })
@@ -983,6 +1085,7 @@ export function FlightMap({ mission = null, onMapClick, onMapDoubleClick, onWayp
       setLoadedMap(null)
       hasCenteredRef.current = false
       trailRef.current = []
+      flightTrailRef.current = []
     }
     // Mount-once: the map instance must not be torn down and recreated when
     // `mission` changes. The effect below keeps its sources in sync instead.
@@ -1015,16 +1118,30 @@ export function FlightMap({ mission = null, onMapClick, onMapDoubleClick, onWayp
     if (!lappingLatchRef.current && mission && index !== undefined && drone && isLappingCurrentLoiter(mission, index, drone)) {
       lappingLatchRef.current = { missionId: mission.id, index }
     }
+    pathColorRef.current = pathColor
+    coverageRef.current = coverage
+    const valueOf = routeValue()
     ;(map.getSource(MISSION_FLOATING_PATH_SOURCE) as GeoJSONSource | undefined)?.setData(
-      floatingPathGeoJson(mission, vehicleState, lappingLatchRef.current !== null, metersPerPx, routeWind),
+      floatingPathGeoJson(mission, vehicleState, lappingLatchRef.current !== null, metersPerPx, routeWind, valueOf),
     )
     ;(map.getSource(MISSION_LOITER_RINGS_SOURCE) as GeoJSONSource | undefined)?.setData(
       buildMissionLoiterRingsGeoJson(mission, pathClearedBeforeIndex(vehicleState), metersPerPx),
     )
-    setSourceData(map, MISSION_PATH_FLAT_SOURCE, flatPathGeoJson(mission, vehicleState, lappingLatchRef.current !== null, routeWind))
+    const flatRoute = flatPathGeoJson(mission, vehicleState, lappingLatchRef.current !== null, routeWind, valueOf)
+    setSourceData(map, MISSION_PATH_FLAT_SOURCE, flatRoute)
+    builtRef.current.route = flatRoute
     setSourceData(map, MISSION_LOITER_RINGS_FLAT_SOURCE, buildMissionLoiterRingLinesGeoJson(mission, pathClearedBeforeIndex(vehicleState)))
     setSourceData(map, MISSION_WAYPOINTS_FLAT_SOURCE, buildMissionWaypointPointsGeoJson(mission, pathClearedBeforeIndex(vehicleState)))
-  }, [mission, vehicleState, routeWind])
+    applyPathColor(map)
+  }, [mission, vehicleState, routeWind, pathColor, coverage])
+
+  // A new colour setting redraws the trail too (the route redraws above).
+  useEffect(() => {
+    pathColorRef.current = pathColor
+    const map = mapRef.current
+    if (map && loadedRef.current) setTrail(map, Date.now())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathColor])
 
   useEffect(() => {
     const map = mapRef.current
@@ -1064,17 +1181,33 @@ export function FlightMap({ mission = null, onMapClick, onMapDoubleClick, onWayp
     syncFlatAircraftVisibility(map, aircraftMarkerRef.current)
 
     const now = Date.now()
-    trailRef.current = appendTrailPoint(trailRef.current, { point, altM: vehicleState.position.altRelM, atMs: now }, MAX_TRAIL_POINTS, now)
+    const trailPoint: AltitudePoint = {
+      point,
+      altM: vehicleState.position.altRelM,
+      atMs: now,
+      conditions: {
+        groundSpeedMps: vehicleState.groundSpeedMps,
+        wind: vehicleState.wind ?? routeWindRef.current ?? undefined,
+        cellular: vehicleState.cellular,
+      },
+    }
+    trailRef.current = appendTrailPoint(trailRef.current, trailPoint, MAX_TRAIL_POINTS, now)
+    // The whole flight, from arming: a fresh one each time it arms.
+    if (vehicleState.armed && !wasArmedRef.current) flightTrailRef.current = []
+    wasArmedRef.current = vehicleState.armed
+    const lastKept = flightTrailRef.current.at(-1)
+    if (vehicleState.armed && (!lastKept || haversineDistanceM(lastKept.point, point) >= FLIGHT_TRAIL_SPACING_M)) {
+      flightTrailRef.current = [...flightTrailRef.current, trailPoint].slice(-MAX_FLIGHT_TRAIL_POINTS)
+    }
     if (loadedRef.current) {
-      ;(map.getSource(TRAIL_SOURCE) as GeoJSONSource | undefined)?.setData(
-        buildFloatingTrailGeoJson(trailRef.current, viewMetersPerPx(map), now),
-      )
-      setSourceData(map, TRAIL_FLAT_SOURCE, buildTrailLineGeoJson(trailRef.current, now))
+      setTrail(map, now)
       if (!followingRef.current) {
         ;(map.getSource(AIRCRAFT_MARKER_SOURCE) as GeoJSONSource | undefined)?.setData(aircraftGeoJson(map, vehicleState))
         setGimbalRay(map, gimbalLayerRef.current, aircraftPose(vehicleState), vehicleState.gimbal)
       }
     }
+    // setTrail reads only refs; telemetry alone drives this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vehicleState])
 
   // Stale telemetry: the aircraft is drawn faded, so its position reads as
@@ -1165,6 +1298,11 @@ export function FlightMap({ mission = null, onMapClick, onMapDoubleClick, onWayp
       zoom: Math.max(map.getZoom(), FOLLOW_ZOOM),
       duration: FOLLOW_START_MS,
     })
+  }
+
+  function selectPathColor(metric: PathColorMetric) {
+    setPathColor(metric)
+    savePathColorMetric(metric)
   }
 
   /** One overlay at a time; picking the one that's on turns it off. */
@@ -1272,6 +1410,9 @@ export function FlightMap({ mission = null, onMapClick, onMapDoubleClick, onWayp
         {/* Under the weather toggles, pushing follow and recenter down. Rain
             speaks for itself: only wind has a key. */}
         {weatherOverlay === 'wind' && <WeatherLegend status={weatherStatus} />}
+
+        {/* What the trail and route are coloured by, with its key. */}
+        <PathColorControl metric={pathColor} scale={pathScale} onChange={selectPathColor} />
 
         {/* While following, pick chase (30° behind) or top-down. */}
         {following && (

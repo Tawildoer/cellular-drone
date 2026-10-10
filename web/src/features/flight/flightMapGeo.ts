@@ -6,6 +6,7 @@ import {
   haversineDistanceM,
   itemPosition,
   legWindTint,
+  type CellularSignal,
   type GimbalAttitude,
   type GeoPoint,
   type Mission,
@@ -25,7 +26,22 @@ export interface AltitudePoint {
   altM: number
   /** When it was recorded (epoch ms): trail points fade out by age. */
   atMs?: number
+  /** What the drone measured there, for colouring the trail. */
+  conditions?: TrailConditions
 }
+
+export interface TrailConditions {
+  groundSpeedMps: number
+  /** Measured by the aircraft, else the forecast. */
+  wind?: WindVector
+  cellular?: CellularSignal
+}
+
+/** A trail segment's value for the path colour (pathColoring.ts), or
+ * undefined where there's nothing to colour it by. */
+export type TrailValue = (a: AltitudePoint, b: AltitudePoint) => number | undefined
+/** The same for a stretch of planned route, at its middle. */
+export type RouteValue = (at: GeoPoint, altM: number, trackDeg: number) => number | undefined
 
 /** Adds a point; with `nowMs`, also drops points older than the lifetime. */
 export function appendTrailPoint(trail: AltitudePoint[], point: AltitudePoint, max = MAX_TRAIL_POINTS, nowMs?: number): AltitudePoint[] {
@@ -93,7 +109,12 @@ const TRAIL_TAIL_WIDTH = 0.1
  * `nowMs`): each segment carries `fade` (1 fresh, 0 expiring), which the
  * layer maps to colour, and it narrows as it fades. (A fill-extrusion
  * layer's opacity can't vary per feature, so the fade is colour and width.) */
-export function buildFloatingTrailGeoJson(trail: AltitudePoint[], metersPerPx = 0, nowMs?: number): FeatureCollection<Polygon> {
+export function buildFloatingTrailGeoJson(
+  trail: AltitudePoint[],
+  metersPerPx = 0,
+  nowMs?: number,
+  valueOf?: TrailValue,
+): FeatureCollection<Polygon> {
   const features: Feature<Polygon>[] = []
   const halfWidthM = atLeastPx(TRAIL_HALF_WIDTH_M, LINE_MIN_HALF_WIDTH_PX, metersPerPx)
 
@@ -124,12 +145,14 @@ export function buildFloatingTrailGeoJson(trail: AltitudePoint[], metersPerPx = 
     ]
 
     const altMid = (a.altM + b.altM) / 2
+    const v = valueOf?.(a, b)
     features.push({
       type: 'Feature',
       properties: {
         base: Math.max(0, altMid - TRAIL_HALF_THICKNESS_M),
         top: altMid + TRAIL_HALF_THICKNESS_M,
         fade,
+        ...(v === undefined ? {} : { v }),
       },
       geometry: { type: 'Polygon', coordinates: [ring] },
     })
@@ -266,6 +289,7 @@ export function buildMissionFloatingPathGeoJson(
   dronePosition?: GeoPoint,
   metersPerPx = 0,
   wind?: WindVector | null,
+  valueOf?: RouteValue,
 ): FeatureCollection<Polygon> {
   const missionPoints = missionAltitudePoints(mission)
   const altPoints: IndexedAltitudePoint[] =
@@ -288,7 +312,8 @@ export function buildMissionFloatingPathGeoJson(
     const behindFraction = isCurrentLeg && dronePosition ? alongTrackFraction(dronePosition, a.point, b.point) : 0
 
     const dashCount = Math.min(FLOATING_PATH_MAX_DASHES_PER_LEG, Math.max(1, Math.floor(legLengthM / periodM)))
-    const windTint = legWindTint(bearingDeg(a.point, b.point), wind)
+    const trackDeg = bearingDeg(a.point, b.point)
+    const windTint = legWindTint(trackDeg, wind)
 
     for (let d = 0; d < dashCount; d++) {
       const startM = d * periodM
@@ -302,6 +327,7 @@ export function buildMissionFloatingPathGeoJson(
       const lon1 = lerp(a.point.lon, b.point.lon, t1)
       const lat1 = lerp(a.point.lat, b.point.lat, t1)
       const altMid = lerp(a.altM, b.altM, (t0 + t1) / 2)
+      const v = valueOf?.({ lat: lerp(lat0, lat1, 0.5), lon: lerp(lon0, lon1, 0.5) }, altMid, trackDeg)
 
       const dLon = lon1 - lon0
       const dLat = lat1 - lat0
@@ -324,6 +350,7 @@ export function buildMissionFloatingPathGeoJson(
           base: Math.max(0, altMid - FLOATING_PATH_HALF_THICKNESS_M),
           top: altMid + FLOATING_PATH_HALF_THICKNESS_M,
           windTint,
+          ...(v === undefined ? {} : { v }),
         },
         geometry: { type: 'Polygon', coordinates: [ring] },
       })
@@ -440,10 +467,24 @@ function lngLat(point: GeoPoint): [number, number] {
 }
 
 /** The flat trail. With `nowMs`, segments that are expiring come out one by
- * one with their `fade` (for line-opacity); the fresh part stays one line. */
-export function buildTrailLineGeoJson(trail: AltitudePoint[], nowMs?: number): FeatureCollection<LineString> {
+ * one with their `fade` (for line-opacity); the fresh part stays one line.
+ * With `valueOf`, every segment comes out alone, carrying its value `v`. */
+export function buildTrailLineGeoJson(trail: AltitudePoint[], nowMs?: number, valueOf?: TrailValue): FeatureCollection<LineString> {
   if (trail.length < 2) return featureCollection<LineString>([])
   const features: Feature<LineString>[] = []
+  if (valueOf) {
+    for (let i = 0; i < trail.length - 1; i++) {
+      const a = trail[i]!
+      const b = trail[i + 1]!
+      const v = valueOf(a, b)
+      features.push({
+        type: 'Feature',
+        properties: { fade: trailFade(a.atMs, nowMs), ...(v === undefined ? {} : { v }) },
+        geometry: { type: 'LineString', coordinates: [lngLat(a.point), lngLat(b.point)] },
+      })
+    }
+    return featureCollection(features)
+  }
   const fresh: [number, number][] = []
   for (let i = 0; i < trail.length - 1; i++) {
     const a = trail[i]!
@@ -473,6 +514,10 @@ export function buildMissionWaypointPointsGeoJson(mission: Mission | null, clear
   return featureCollection(features)
 }
 
+/** A coloured flat route is cut into pieces about this long. */
+const ROUTE_LINE_PIECE_M = 50
+const ROUTE_LINE_MAX_PIECES = 200
+
 /** One line per leg, same arguments as buildMissionFloatingPathGeoJson; the
  * current leg starts at the drone's along-track projection rather than
  * dropping dashes behind it. */
@@ -482,6 +527,7 @@ export function buildMissionPathLinesGeoJson(
   clearedBeforeIndex?: number,
   dronePosition?: GeoPoint,
   wind?: WindVector | null,
+  valueOf?: RouteValue,
 ): FeatureCollection<LineString> {
   const missionPoints = missionAltitudePoints(mission)
   const points: IndexedAltitudePoint[] =
@@ -498,11 +544,29 @@ export function buildMissionPathLinesGeoJson(
     const behind = isCurrentLeg && dronePosition ? Math.max(0, alongTrackFraction(dronePosition, a.point, b.point)) : 0
     if (behind >= 1) continue
     const start: GeoPoint = { lat: lerp(a.point.lat, b.point.lat, behind), lon: lerp(a.point.lon, b.point.lon, behind) }
-    features.push({
-      type: 'Feature',
-      properties: { windTint: legWindTint(bearingDeg(a.point, b.point), wind) },
-      geometry: { type: 'LineString', coordinates: [lngLat(start), lngLat(b.point)] },
-    })
+    const trackDeg = bearingDeg(a.point, b.point)
+    const windTint = legWindTint(trackDeg, wind)
+    if (!valueOf) {
+      features.push({
+        type: 'Feature',
+        properties: { windTint },
+        geometry: { type: 'LineString', coordinates: [lngLat(start), lngLat(b.point)] },
+      })
+      continue
+    }
+    // Coloured by a value that changes along the leg: in short pieces.
+    const pieces = Math.min(ROUTE_LINE_MAX_PIECES, Math.max(1, Math.ceil(((1 - behind) * haversineDistanceM(a.point, b.point)) / ROUTE_LINE_PIECE_M)))
+    for (let k = 0; k < pieces; k++) {
+      const t0 = behind + ((1 - behind) * k) / pieces
+      const t1 = behind + ((1 - behind) * (k + 1)) / pieces
+      const at = (t: number): GeoPoint => ({ lat: lerp(a.point.lat, b.point.lat, t), lon: lerp(a.point.lon, b.point.lon, t) })
+      const v = valueOf(at((t0 + t1) / 2), lerp(a.altM, b.altM, (t0 + t1) / 2), trackDeg)
+      features.push({
+        type: 'Feature',
+        properties: { windTint, ...(v === undefined ? {} : { v }) },
+        geometry: { type: 'LineString', coordinates: [lngLat(at(t0)), lngLat(at(t1))] },
+      })
+    }
   }
   return featureCollection(features)
 }

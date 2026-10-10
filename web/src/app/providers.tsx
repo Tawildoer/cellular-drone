@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { MockLink } from '../link/mock'
-import { createAuthStore, createFlightLogStore, createMissionStore, createVehicleStore } from '../state'
+import { createAuthStore, createCoverageStore, createFlightLogStore, createMissionStore, createVehicleStore } from '../state'
 import { createAppServices, type AppServices } from './config'
 import { Wrench } from 'lucide-react'
 import { MockDevToolsPanel } from './MockDevTools'
 import {
   AppStoresContext,
+  CoverageContext,
   FlightLogContext,
   MenuExtrasContext,
   MissionTranslatorContext,
@@ -24,6 +25,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
     missionStore: createMissionStore(services.missionRepository),
   }))
   const [flightLog] = useState(() => createFlightLogStore(services.flightLogRepository))
+  const [coverage] = useState(() => createCoverageStore(services.coverageRepository))
 
   // Dev convenience only: skip retyping the dev credentials on every reload
   // while iterating. Falls back to the real login screen if this ever
@@ -42,7 +44,9 @@ export function AppProviders({ children }: { children: ReactNode }) {
         <TerrainServiceContext.Provider value={services.terrain}>
           <WeatherServiceContext.Provider value={services.weather}>
             <FlightLogContext.Provider value={flightLog}>
-              <MenuExtras>{children}</MenuExtras>
+              <CoverageContext.Provider value={coverage}>
+                <MenuExtras>{children}</MenuExtras>
+              </CoverageContext.Provider>
             </FlightLogContext.Provider>
           </WeatherServiceContext.Provider>
         </TerrainServiceContext.Provider>

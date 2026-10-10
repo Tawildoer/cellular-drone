@@ -22,6 +22,8 @@ The software is ahead of the hardware, as planned. **Phase 1 runs end to end aga
 
 <span class="chip done">done</span> **Mac app** (ADR-0027): *Ground Control*, an Electron shell on the same web build, updated over the air by every deploy and able to start offline. The web app stays first-class.
 
+<span class="chip done">done</span> **Path colours and coverage** (ADR-0028): the trail and route coloured by wind, cell signal, height or speed; cell signal in telemetry, simulated by the mock and remembered from flight to flight.
+
 <span class="chip done">done</span> **Mission planning tools**: height profile over real terrain with clearance warnings, distance and time at ArduPlane's figures, and *Follow terrain at X m* (ADR-0021).
 
 <span class="chip done">done</span> **In-browser mock drone and `mock-agent`**: the whole UI was built against it; it now also reports simulated LTE conditions. Public demo on Cloudflare.

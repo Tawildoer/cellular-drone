@@ -2,7 +2,10 @@ import { createContext, useContext, type ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { useStore } from 'zustand'
 import {
+  createCoverageStore,
   createFlightLogStore,
+  type CoverageStore,
+  type CoverageStoreState,
   type AuthState,
   type AuthStore,
   type FlightLogStore,
@@ -14,7 +17,7 @@ import {
 } from '../state'
 import type { MissionTranslator, TerrainService, WeatherService } from '../services'
 import { ArduPilotMissionTranslator } from '../services/ardupilot'
-import { InMemoryFlightLogRepository } from '../services/mock'
+import { InMemoryCoverageRepository, InMemoryFlightLogRepository } from '../services/mock'
 
 export interface AppStores {
   authStore: AuthStore
@@ -76,6 +79,14 @@ export const FlightLogContext = createContext<FlightLogStore>(createFlightLogSto
 
 export function useFlightLog<T>(selector: (s: FlightLogStoreState) => T): T {
   return useStore(useContext(FlightLogContext), selector)
+}
+
+/** The cell coverage measured on earlier flights; in memory by default, as
+ * above. */
+export const CoverageContext = createContext<CoverageStore>(createCoverageStore(new InMemoryCoverageRepository()))
+
+export function useCoverage<T>(selector: (s: CoverageStoreState) => T): T {
+  return useStore(useContext(CoverageContext), selector)
 }
 
 /** A section the app adds to the flight screen's menu, e.g. the simulator's

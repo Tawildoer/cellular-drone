@@ -281,3 +281,15 @@ Raw ICE detail lives in the agent's JSONL log and the browser console (`[WebRtcL
 - A bad deploy reaches the Mac app too, though only when the operator chooses to reload; the previous version stays on disk.
 - Downloads are checked against the manifest over HTTPS, which protects against corruption, not a compromised site. Signing the manifest (an Ed25519 key, as for session tokens) is the step up if the app starts controlling real aircraft through native links.
 - The deployed build is the mock demo build today (the link is chosen at build time), so the Mac app flies the simulated drone until the link choice moves to run time with the server (Phase 1c).
+
+## ADR-0028: Colour the paths by wind, cell signal, height or speed, and remember coverage (2026-10-10, accepted)
+**Context:** On a cellular drone, where the link is weak matters as much as where the wind is. The operator wants to see it on the map, both where the drone has flown and along the route it's about to fly.
+**Decision:**
+- **One setting colours both the flown trail and the planned route** by wind along the track, cell signal, height above home or ground speed (`Path ·` under the map controls). Off, both look as before (ADR-0026's headwind tint on the route). Coloured, the trail keeps the whole flight, one point every 10 m, instead of the last minute.
+- **The cell signal is a telemetry field, not MAVLink**: `cellular { rsrpDbm, sinrDb, band? }`, which the agent will read from the modem (Phase 2; see `docs/MAVLINK.md`). It's shown in four bands, the worse of strength (RSRP) and quality (SINR), since up high the drone hears many towers: strong signal, poor SINR.
+- **The route's cell colour is what earlier flights measured there**: readings are kept per ~30 m square and 40 m height band (the newest wins, up to 5000) in this browser; grey where it hasn't flown. Not a prediction model.
+- **The mock simulates it**: four towers round home, path loss that eases with height, antennas tilted down, landscape shadowing, and interference between towers. Its link delay and loss get worse with low SINR.
+- Colours follow the chart palette: one blue ramp for height and speed (relative to the flight's own range), blue tail to red head round grey calm for wind, the status colours for cell bands, each with its key.
+**Consequences:**
+- Coverage lives in one browser until the server exists (Phase 1c); it could then be pooled across flights and operators.
+- The cell bands' thresholds (RSRP −90/−100/−110 dBm, SINR 13/5/0 dB) are textbook figures; revisit with Phase 2 data on what the link actually needs.
