@@ -192,7 +192,7 @@ export function WaypointMenu({
       ref={ref}
       role="menu"
       aria-label={`Waypoint ${anchor.index + 1}`}
-      className="glass-panel fixed z-50 flex w-44 flex-col gap-0.5 p-1"
+      className="glass-panel glass-dense fixed z-50 flex w-44 flex-col gap-0.5 p-1"
       // Just below and right of the pointer, kept on screen.
       style={{ left: Math.min(anchor.x + 8, window.innerWidth - 184), top: Math.min(anchor.y + 8, window.innerHeight - 120) }}
     >

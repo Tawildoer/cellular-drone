@@ -2,7 +2,7 @@ import { WIND_MODERATE_MPS, WIND_STRONG_MPS } from '../../domain'
 import type { WeatherOverlayStatus } from './useWeatherOverlay'
 
 const WIND_KEY = [
-  { color: '#ffffff', label: `< ${WIND_MODERATE_MPS} m/s` },
+  { color: '#ffffff', label: `< ${WIND_MODERATE_MPS}` },
   { color: 'var(--status-warning)', label: `${WIND_MODERATE_MPS}–${WIND_STRONG_MPS}` },
   { color: 'var(--status-critical)', label: `> ${WIND_STRONG_MPS}` },
 ]

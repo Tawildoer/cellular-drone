@@ -76,7 +76,7 @@ export function MenuDrawer() {
           <aside
             id="flight-menu"
             aria-label="Menu"
-            className="glass-panel pointer-events-auto fixed bottom-3 left-3 top-3 z-40 flex w-80 flex-col overflow-hidden"
+            className="glass-panel glass-dense pointer-events-auto fixed bottom-3 left-3 top-3 z-40 flex w-80 flex-col overflow-hidden"
           >
             <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border/60 px-3">
               <span className="hud-label flex-1" style={{ color: 'var(--foreground)' }}>

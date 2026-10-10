@@ -95,7 +95,7 @@ export function HoverDrawer({
             id={id}
             role="tooltip"
             data-state={closing ? 'closing' : 'open'}
-            className="glass-panel hover-drawer fixed z-50 flex flex-col gap-1.5 overflow-hidden px-2 py-2"
+            className="glass-panel glass-dense hover-drawer fixed z-50 flex flex-col gap-1.5 overflow-hidden px-2 py-2"
             style={{ top: anchor.top, left: anchor.left, width: anchor.width }}
             onMouseEnter={open}
             onMouseLeave={scheduleClose}
