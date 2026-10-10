@@ -82,7 +82,7 @@ All real links use **the same `protocol/` messages**, so swapping transports tou
 - Mission planner: tap the map to add waypoints, edit altitudes, VTOL takeoff and land items, validation errors inline, save and load.
 - Preflight checklist (blocks arm and start until complete) + command bar with confirm dialogs (slide-to-confirm or hold-to-confirm on touch).
 - Event log panel (status text, failsafes, command results).
-- Dev panel (only when `VITE_VEHICLE_LINK=mock`): MockLink fault injection.
+- Dev panel (the menu's Simulator section, whenever the vehicle is a `MockLink`): sim speed, guidance look-ahead and fault injection. Never for a real link.
 
 ## 6. Testing
 - Vitest unit tests for `domain/` (validation, checklist) and `protocol/` (schema round-trips).

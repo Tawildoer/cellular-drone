@@ -43,7 +43,7 @@ The software is ahead of the hardware, as planned. **Phase 1 runs end to end aga
 :   Today the server is only a signalling relay. Still to build: argon2id login, drone registry and Ed25519 session tokens (so the agent's token check stops being a stub), the agent's per-drone key, mission storage and flight-log upload, deploying to the VPS. That unlocks the Phase 1 exit test: a phone on mobile data, through the VPS, flying SITL.
 
 <span class="chip next">next</span> **1a loose ends**
-:   A dev panel for the mock's fault injection, a Playwright smoke test against the mock, and a deliberate Chrome laptop check. Phone layout stays deferred.
+:   A Playwright smoke test against the mock, and a deliberate Chrome laptop check. (The fault-injection panel is done: the menu's Simulator section.) Phone layout stays deferred.
 
 ### Waiting on hardware or decisions
 

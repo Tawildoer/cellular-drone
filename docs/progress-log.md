@@ -2,6 +2,11 @@
 
 What each working session delivered, newest first. Commit hashes link to the change on GitHub. Add an entry when work lands; tick the matching boxes in [the plan](PLAN.md) in the same change.
 
+## 2026-10-10: fault injection panel
+
+- **Simulator section, now with faults**: the menu's Simulator section (whenever the drone is the in-browser mock, the public demo included) can drop the link, add delay, lose telemetry, have the RC pilot take over, force a low battery, raise any failsafe and set the wind, with *Clear all faults*. Every warning the console has can now be seen on demand.
+- **Mock fix**: with its link dropped, the mock drone used to freeze in place; it now flies on, as a real one does, and reappears where it has got to.
+
 ## 2026-10-10: path colours and cell coverage
 
 - **Colour the paths** (ADR-0028): a *Path* setting under the map controls colours the flown trail and the planned route by wind along the track, cell signal, height above home or ground speed, each with its key. Coloured, the trail keeps the whole flight.

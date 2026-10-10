@@ -39,7 +39,7 @@ Order: **frontend first against a mock vehicle**, then the real backend undernea
 - [x] UI: colour the trail and planned route by wind, cell signal, height or speed; cell signal in telemetry (simulated by the mock); coverage remembered from earlier flights (ADR-0028, 2026-10-10)
 - [x] Mac app (`desktop/`, ADR-0027): Electron shell on the same web build, over-the-air UI updates from the deploy, starts offline (2026-10-10)
 - [ ] Mac app native features: serial ground radio, offline map packs, background alerts; run-time link choice
-- [ ] Dev panel for MockLink fault injection
+- [x] Dev panel for MockLink fault injection: the menu's Simulator section (link drop, delay, telemetry loss, RC takeover, low battery, failsafes, wind); the mock drone now flies on while its link is down (2026-10-10)
 - [ ] Playwright smoke: login → plan → upload → arm → start → pause/resume → RTL
 - [ ] Check it on Chrome desktop (laptop, primary target now). Chrome Android / iOS Safari (phone layout) deferred — same components, verify later.
 

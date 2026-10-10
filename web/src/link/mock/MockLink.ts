@@ -195,13 +195,15 @@ export class MockLink implements VehicleLink {
     if (!this.connectedAtMs) return
 
     const fault = this.engine.getFaultConfig()
+    const dtS = (this.tickMs / 1000) * this.timeScale
+    // The drone flies on without its link, as a real one does: only what it
+    // says is lost, and the browser sees it again where it's got to.
+    const events = this.engine.tick(dtS)
     if (fault.linkDropped) {
       this.setStatus({ state: 'disconnected' })
       return
     }
-
-    const dtS = (this.tickMs / 1000) * this.timeScale
-    for (const event of this.engine.tick(dtS)) this.emitEvent(event)
+    for (const event of events) this.emitEvent(event)
 
     this.emitState()
     // Real time, not sim time: the link doesn't speed up with the sim.

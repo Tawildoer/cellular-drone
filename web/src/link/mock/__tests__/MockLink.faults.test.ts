@@ -65,6 +65,25 @@ describe('MockLink fault injection', () => {
     await link.disconnect()
   })
 
+  it('keeps flying while the link is dropped, and reports where it got to', async () => {
+    // 50× speed: each 20 ms tick is a simulated second.
+    const link = new MockLink({ tickMs: 20, timeScale: 50 })
+    await link.connect('v1')
+    link.setFaultConfig({ linkDropped: true })
+    await delay(150)
+    const next = new Promise<VehicleState>((resolve) => {
+      const off = link.onState((s) => {
+        off()
+        resolve(s)
+      })
+    })
+    link.setFaultConfig({ linkDropped: false })
+    // GPS reaches a 3D fix two simulated seconds after connecting: only if
+    // the simulation ran on while the link was down.
+    expect((await next).gps.fixType).toBe('fix3d')
+    await link.disconnect()
+  })
+
   it('blocks flight-affecting commands while RC override is active', async () => {
     const link = new MockLink({ tickMs: 20 })
     await link.connect('v1')
