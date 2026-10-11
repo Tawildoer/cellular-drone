@@ -166,6 +166,10 @@ export const missionSchema = z.object({
   updatedAt: z.number(),
 })
 
+/** A mission as it crosses the wire, for code outside the web app (the
+ * server); the web app uses its own domain `Mission`, which matches it. */
+export type WireMission = z.infer<typeof missionSchema>
+
 /** A raw flight-controller mission row, as read back after an upload
  * (domain/vehicleMission.ts). */
 export const vehicleMissionItemSchema = z.object({

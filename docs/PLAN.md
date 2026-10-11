@@ -71,12 +71,13 @@ Do this before new planner features (ADR-0017). Mapping reference: `docs/MAVLINK
 ### 1c: Server + real link
 - [x] Move `protocol/` to a shared workspace package (`packages/protocol`) (2026-10-11)
 - [ ] `server/` (TypeScript, Node 24, Fastify):
-  - [ ] Auth: argon2id, session cookies, rate limiting, admin seeded from env
+  - [x] Auth: argon2id, session cookies, rate limiting, admin seeded from env; more users from `npm run cli` (ADR-0030, 2026-10-11)
   - [ ] Drone registry (per-drone keys) and session-token minting (Ed25519)
-  - [ ] Signalling WebSocket relay between the browser and the drone
-  - [ ] Missions CRUD and log upload endpoint
+  - [x] Signalling WebSocket relay between the browser and the drone; operators need a session cookie (2026-10-11; drones authenticate in the next step)
+  - [x] Missions CRUD, validated against the protocol's `missionSchema` (2026-10-11)
+  - [ ] Flight-log upload endpoint, signed with the drone key
   - [ ] `docker-compose.yml`: server, Caddy, coturn (with time-limited TURN credentials)
-- [ ] `web/`: `WebRtcLink`, `HttpAuthClient`, `HttpMissionRepository`. All pass the same contract tests. Switch with `VITE_VEHICLE_LINK=webrtc`.
+- [x] `web/`: `WebRtcLink`, `HttpAuthClient`, `HttpMissionRepository`. All pass the same contract tests. Switch with `VITE_VEHICLE_LINK=webrtc` (`VITE_BACKEND` picks the server or local storage; 2026-10-11)
 - [ ] Test end to end in SITL: log in from a phone on mobile data → plan → upload → arm → fly → pause/resume → RTL → land.
 - [ ] Test forced-TURN mode (`iceTransportPolicy: "relay"`), and kill the agent mid-flight to check the SITL failsafe.
 

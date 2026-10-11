@@ -27,9 +27,12 @@ function waitForPort(port: number, timeoutMs: number): Promise<void> {
   })
 }
 
-function start(name: string, command: string, args: string[], cwd: string): ChildProcess {
+/** The account the tests sign in with, created by the server on start. */
+export const E2E_USER = { username: 'e2e', password: 'e2e-sitl-password' }
+
+function start(name: string, command: string, args: string[], cwd: string, env: Record<string, string> = {}): ChildProcess {
   const log = createWriteStream(path.join(LOG_DIR, `${name}.log`))
-  const child = spawn(command, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(command, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...env } })
   child.stdout?.pipe(log)
   child.stderr?.pipe(log)
   return child
@@ -52,7 +55,12 @@ export default async function globalSetup() {
 
   // tsx directly rather than `npm start`: killing npm leaves its tsx child running.
   const serverDir = path.join(REPO, 'server')
-  const server = start('server', path.join(serverDir, 'node_modules', '.bin', 'tsx'), ['src/index.ts'], serverDir)
+  const server = start('server', path.join(serverDir, 'node_modules', '.bin', 'tsx'), ['src/index.ts'], serverDir, {
+    DB_PATH: ':memory:',
+    ADMIN_USERNAME: E2E_USER.username,
+    ADMIN_PASSWORD: E2E_USER.password,
+    COOKIE_SECURE: 'false',
+  })
   await waitForPort(8788, 30_000)
   const agent = start(
     'agent',

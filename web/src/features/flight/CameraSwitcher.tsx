@@ -17,11 +17,10 @@ export function CameraSwitcher() {
   const [pending, setPending] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
-  // Pending until the drone says it's sending the new camera.
+  // Pending until the drone says it's sending the new camera (adjusted
+  // while rendering, not in an effect, so there's no extra pass).
   const active = video?.activeCameraId
-  useEffect(() => {
-    if (pending && pending === active) setPending(null)
-  }, [pending, active])
+  if (pending && pending === active) setPending(null)
 
   useEffect(() => {
     if (!notice) return

@@ -19,11 +19,17 @@ import { DEFAULT_USERNAME, DEFAULT_PASSWORD } from '../services/mock'
 
 export function AppProviders({ children }: { children: ReactNode }) {
   const [services] = useState<AppServices>(() => createAppServices())
-  const [stores] = useState<AppStores>(() => ({
-    authStore: createAuthStore(services.authClient),
-    vehicleStore: createVehicleStore(services.resolveVehicleLink),
-    missionStore: createMissionStore(services.missionRepository),
-  }))
+  const [stores] = useState<AppStores>(() => {
+    const authStore = createAuthStore(services.authClient)
+    // Before the first render, so a reload with a live session never shows
+    // the login screen.
+    void authStore.getState().restore()
+    return {
+      authStore,
+      vehicleStore: createVehicleStore(services.resolveVehicleLink),
+      missionStore: createMissionStore(services.missionRepository),
+    }
+  })
   const [flightLog] = useState(() => createFlightLogStore(services.flightLogRepository))
   const [coverage] = useState(() => createCoverageStore(services.coverageRepository))
 
@@ -32,11 +38,11 @@ export function AppProviders({ children }: { children: ReactNode }) {
   // doesn't match (e.g. custom VITE_DEV_USERNAME/PASSWORD mismatch) — it's
   // not a replacement for the login flow, just friction removal for now.
   useEffect(() => {
-    if (!import.meta.env.DEV) return
+    if (!import.meta.env.DEV || !services.devAutoLogin) return
     const username = import.meta.env.VITE_DEV_USERNAME ?? DEFAULT_USERNAME
     const password = import.meta.env.VITE_DEV_PASSWORD ?? DEFAULT_PASSWORD
     void stores.authStore.getState().login(username, password)
-  }, [stores])
+  }, [services, stores])
 
   return (
     <AppStoresContext.Provider value={stores}>

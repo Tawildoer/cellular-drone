@@ -5,6 +5,7 @@ import { WebRtcLink } from '../link/webrtc'
 import { WsLink } from '../link/ws'
 import type { AuthClient, CoverageRepository, FlightLogRepository, MissionRepository, MissionTranslator, TerrainService, WeatherService } from '../services'
 import { ArduPilotMissionTranslator } from '../services/ardupilot'
+import { HttpAuthClient, HttpMissionRepository } from '../services/http'
 import { LocalStorageCoverageRepository, LocalStorageFlightLogRepository, LocalStorageMissionRepository } from '../services/local-storage'
 import { MapTilerTerrainService } from '../services/maptiler'
 import { PublicWeatherService } from '../services/weather'
@@ -47,6 +48,13 @@ export const DEMO_MISSION: Mission = {
 }
 
 const configuredKind = import.meta.env.VITE_VEHICLE_LINK ?? 'mock'
+/**
+ * Where logins and missions live: 'server' (server/, through the same origin:
+ * the deploy, or Vite's dev proxy) or 'local' (the dev mock login and this
+ * browser's localStorage). A real vehicle link means the server by default.
+ */
+const backend = import.meta.env.VITE_BACKEND ?? (configuredKind === 'webrtc' ? 'server' : 'local')
+
 /** Test builds only (the Playwright smoke test): a mock build also lists
  * "Drone 1", a plain simulated drone that starts landed and disarmed, unlike
  * the demo drone, which opens already flying its patrol. */
@@ -66,6 +74,9 @@ export const VEHICLES: VehicleDescriptor[] = [
 
 export interface AppServices {
   authClient: AuthClient
+  /** Dev builds sign in by themselves with the mock's credentials; never
+   * against the server, whose accounts aren't the mock's. */
+  devAutoLogin: boolean
   /**
    * Resolves the link for a selected vehicle. The demo vehicle always gets a
    * fresh MockLink (a clean airborne mission each time it's opened); real
@@ -99,13 +110,19 @@ function iceServersFromEnv(): RTCIceServer[] | undefined {
     .map((url) => ({ urls: url }))
 }
 
+/** Signalling on the page's own origin, so the session cookie goes with it
+ * (in development, Vite proxies /signal to the server). */
+function sameOriginSignalUrl(): string {
+  return `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/signal`
+}
+
 function createConfiguredLink(): VehicleLink {
   switch (configuredKind) {
     case 'ws':
       return new WsLink({ url: import.meta.env.VITE_WS_URL })
     case 'webrtc':
       return new WebRtcLink({
-        signalUrl: import.meta.env.VITE_SIGNAL_URL,
+        signalUrl: import.meta.env.VITE_SIGNAL_URL || sameOriginSignalUrl(),
         iceServers: iceServersFromEnv(),
         relayOnly: import.meta.env.VITE_ICE_RELAY_ONLY === 'true',
       })
@@ -131,11 +148,13 @@ export function createAppServices(): AppServices {
     return configuredLink
   }
 
+  const useServer = backend === 'server'
   return {
-    authClient: new MockAuthClient(),
+    authClient: useServer ? new HttpAuthClient() : new MockAuthClient(),
+    devAutoLogin: !useServer,
     resolveVehicleLink,
     vehicles: VEHICLES,
-    missionRepository: new LocalStorageMissionRepository(),
+    missionRepository: useServer ? new HttpMissionRepository() : new LocalStorageMissionRepository(),
     flightLogRepository: new LocalStorageFlightLogRepository(),
     coverageRepository: new LocalStorageCoverageRepository(),
     missionTranslator: new ArduPilotMissionTranslator(),

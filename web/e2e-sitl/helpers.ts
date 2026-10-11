@@ -1,12 +1,11 @@
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { expect, type Locator, type Page } from '@playwright/test'
-import { REPO } from './global-setup'
+import { E2E_USER, REPO } from './global-setup'
 
 /** SITL home (sim/docker-compose.yml). */
 export const HOME = { lat: -37.861, lon: 145.062 }
 
-const MISSIONS_KEY = 'cellular-drone:missions'
 const M_PER_DEG_LAT = 111_320
 
 function offset(eastM: number, northM: number) {
@@ -49,24 +48,25 @@ export function pilotMovesSwitchTo(to: 'FBWA' | 'LOITER' | 'QLOITER' | 'RTL' | '
   sitlpilot(['-switch', to])
 }
 
-/** Seeds the test mission as the most recent saved one, which the app
- * uploads to the vehicle when it connects (useFlightMission). */
+/** Signs the page's browser context in and saves the test mission on the
+ * server as the most recent one, which the app uploads to the (disarmed)
+ * vehicle when it connects (useFlightMission). The page then opens signed in. */
 export async function seedMission(page: Page) {
-  await page.addInitScript(
-    ([key, value]) => localStorage.setItem(key, value),
-    [MISSIONS_KEY, JSON.stringify({ [TEST_MISSION.id]: TEST_MISSION })] as const,
-  )
+  const login = await page.request.post('/api/login', { data: E2E_USER })
+  expect(login.ok()).toBe(true)
+  const saved = await page.request.post('/api/missions', { data: TEST_MISSION })
+  expect(saved.ok()).toBe(true)
 }
 
 export async function connectToDrone(page: Page) {
   await page.goto('/')
-  // Dev builds sign in automatically; fall back to the form if not.
+  // Already signed in if seedMission ran (a cookie in this context); else the form.
   const droneButton = page.getByRole('button', { name: /Drone 1/ })
   const username = page.getByLabel(/username/i)
   await expect(droneButton.or(username)).toBeVisible()
   if (await username.isVisible()) {
-    await username.fill('operator')
-    await page.getByLabel(/password/i).fill(process.env.VITE_DEV_PASSWORD ?? 'changeme')
+    await username.fill(E2E_USER.username)
+    await page.getByLabel(/password/i).fill(E2E_USER.password)
     await page.getByRole('button', { name: /sign in|log in/i }).click()
   }
   await droneButton.click()

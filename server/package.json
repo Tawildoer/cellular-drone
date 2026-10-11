@@ -3,14 +3,18 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Signalling relay between the browser and the drone agent. The first slice of the Phase 1c server (ADR-0014): no auth or storage yet.",
+  "description": "Auth, missions and the signalling relay between the browser and the drone agent (Phase 1c): Fastify on Node 24, SQLite through node:sqlite, argon2id through node:crypto.",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "start": "tsx src/index.ts",
+    "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
+    "start": "tsx --env-file-if-exists=.env src/index.ts",
+    "cli": "tsx --env-file-if-exists=.env src/cli.ts",
+    "test": "tsx --test 'src/**/*.test.ts'",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@cellular-drone/protocol": "file:../packages/protocol",
+    "@fastify/cookie": "^11.1.3",
+    "fastify": "^5.12.5",
     "ws": "^8.18.0"
   },
   "devDependencies": {
@@ -18,5 +22,8 @@
     "@types/ws": "^8.5.13",
     "tsx": "^4.19.2",
     "typescript": "~6.0.2"
+  },
+  "engines": {
+    "node": ">=24.7"
   }
 }

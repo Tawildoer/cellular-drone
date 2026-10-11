@@ -17,7 +17,7 @@ An autonomous fixed-wing **VTOL (ArduPilot ArduPlane QuadPlane)** supervised ove
 
 ## Status
 
-Work in progress: software runs end to end against ArduPlane SITL; no hardware yet. **Authentication isn't built yet**: read [SECURITY.md](SECURITY.md) before connecting anything real.
+Work in progress: software runs end to end against ArduPlane SITL; no hardware yet. **Authentication is half built** (operators log in; drones don't authenticate yet): read [SECURITY.md](SECURITY.md) before connecting anything real.
 
 ## Quick start
 

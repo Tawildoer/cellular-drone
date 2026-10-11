@@ -2,6 +2,15 @@
 
 What each working session delivered, newest first. Commit hashes link to the change on GitHub. Add an entry when work lands; tick the matching boxes in [the plan](PLAN.md) in the same change.
 
+## 2026-10-11: server login and missions (Phase 1c, part 1)
+
+- **The protocol is a shared package** (`packages/protocol`, a root npm workspace) used by the web app, the server and mock-agent; `web/src/protocol` re-exports it.
+- **Real logins** (ADR-0030): the server (now Fastify, SQLite via `node:sqlite`) checks argon2id passwords and keeps you signed in with an `HttpOnly`, `SameSite=Strict` cookie for 12 hours; five wrong passwords lock that account for 15 minutes. The admin comes from `.env` on first start; more users with `npm run cli -- user:add <name>`.
+- **Missions on the server**, shared by everyone signed in. The console uses the server for both whenever it's built for the real drone (`VITE_VEHICLE_LINK=webrtc`); the demo and mock builds are unchanged. A reload with a live session goes straight back in.
+- **Signalling needs a login**: a browser's signalling socket must carry the session cookie, from the server's own origin (Vite proxies `/api` and `/signal` in development).
+- **Safety**: the console now uploads the newest saved mission on connect only to a disarmed drone, since it may be another operator's.
+- `e2e:sitl` signs in to the server and saves its mission through the API.
+
 ## 2026-10-10: camera switching
 
 - **Pick the live camera** (ADR-0029): with the video full size, a switcher shows one button per camera the drone reports (the gimbal camera and the aux cameras). A switch shows as pending until the drone reports the new camera, and says why if it's refused; the picture-in-picture tile names the camera being sent.

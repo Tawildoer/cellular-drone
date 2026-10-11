@@ -28,6 +28,9 @@ function reloadOnLinkCodeChange(): Plugin {
   }
 }
 
+/** Where the dev server forwards /api and /signal. */
+const SERVER_URL = process.env.SERVER_URL ?? 'http://localhost:8788'
+
 // https://vite.dev/config/
 export default defineConfig({
   // cloudflare() builds the Worker deploy config, but conflicts with Vitest's
@@ -44,6 +47,13 @@ export default defineConfig({
     // purpose, so it can run beside this one.)
     port: 5173,
     strictPort: true,
+    // The server (../server) on the same origin as the page, as in a deploy,
+    // so its SameSite=Strict session cookie goes with every API call and the
+    // signalling socket. Unused by mock builds.
+    proxy: {
+      '/api': { target: SERVER_URL },
+      '/signal': { target: SERVER_URL.replace(/^http/, 'ws'), ws: true },
+    },
     fs: {
       // The repo-level golden files (testdata/mission-translation) are shared
       // with the Go agent, so the translator tests read them from outside web/;

@@ -31,8 +31,11 @@ export default defineConfig({
     reuseExistingServer: false,
     env: {
       // Process env beats .env.local, so this overrides its mock setting.
+      // Logins and missions on the server; signalling through Vite's proxy
+      // on the page's origin, so the session cookie goes with it.
       VITE_VEHICLE_LINK: 'webrtc',
-      VITE_SIGNAL_URL: 'ws://localhost:8788/signal',
+      VITE_BACKEND: 'server',
+      VITE_SIGNAL_URL: '',
       VITE_ICE_URLS: '', // same machine: host candidates only
     },
   },

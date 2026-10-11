@@ -1,6 +1,6 @@
 # Status
 
-*Last updated 2026-10-10.* The table below is counted from [the plan](PLAN.md)'s checkboxes every time the site builds, so it's always current. The rest of the page is a written summary: update it with the [progress log](progress-log.md).
+*Last updated 2026-10-11.* The table below is counted from [the plan](PLAN.md)'s checkboxes every time the site builds, so it's always current. The rest of the page is a written summary: update it with the [progress log](progress-log.md).
 
 ## Progress by phase
 
@@ -41,8 +41,8 @@ The software is ahead of the hardware, as planned. **Phase 1 runs end to end aga
 <span class="chip next">next</span> **Finish 1b**
 :   Tune the mock to SITL (25 m/s cruise, waypoint-reached and RTL-altitude behaviour). More SITL scenarios: browser closed mid-mission, agent killed mid-flight, mission changed from another ground station. The slow check that a pilot's LOITER isn't time-limited (ADR-0020). Video test pattern in SITL mode. Go protocol types held to the zod schemas by tests.
 
-<span class="chip next">next</span> **Phase 1c: the real server**
-:   Today the server is only a signalling relay. Still to build: argon2id login, drone registry and Ed25519 session tokens (so the agent's token check stops being a stub), the agent's per-drone key, mission storage and flight-log upload, deploying to the VPS. That unlocks the Phase 1 exit test: a phone on mobile data, through the VPS, flying SITL.
+<span class="chip next">next</span> **Phase 1c: the real server** (ADR-0030; logins and missions done)
+:   Still to build: the drone registry and per-drone key, Ed25519 session tokens (so the agent's token check stops being a stub), flight-log upload, docker-compose with Caddy, deploying to the VPS. That unlocks the Phase 1 exit test: a phone on mobile data, through the VPS, flying SITL.
 
 <span class="chip next">next</span> **1a loose ends**
 :   A deliberate Chrome laptop check. (Done: the fault-injection panel, the menu's Simulator section, and the Playwright smoke test against the mock, `npm run e2e`.) Phone layout stays deferred.
@@ -61,4 +61,4 @@ The software is ahead of the hardware, as planned. **Phase 1 runs end to end aga
 - **Gimbal lock, free fly and the battery return run in the mock only**: the agent rejects their commands, and the battery-return Lua script is still to write and prove in SITL.
 - **Follow terrain is done by the planner**, between waypoints only; ArduPlane's own terrain following (which also covers RTL) is a later ADR.
 - **The mock still flies differently from ArduPlane** in places (cruise speed, waypoint radius, RTL altitude): listed in [the MAVLink mapping](MAVLINK.md#mock-vs-arduplane).
-- **No authentication yet** (Phase 1c): the agent refuses every browser unless started with `-insecure-dev-tokens`, for SITL and the bench only. Sessions are identified by id, not user. See `SECURITY.md` in the repository root.
+- **Authentication is half built** (Phase 1c): operators log in, but drones don't authenticate to the server yet and the agent still refuses every browser unless started with `-insecure-dev-tokens`, for SITL and the bench only. See `SECURITY.md` in the repository root.

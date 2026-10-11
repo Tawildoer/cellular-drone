@@ -9,10 +9,13 @@ type Screen = 'vehicleList' | 'flight'
 
 export function AppShell() {
   const user = useAuthStore((s) => s.user)
+  const restoring = useAuthStore((s) => s.status === 'restoring')
   const disconnect = useVehicleStore((s) => s.disconnect)
   const [screen, setScreen] = useState<Screen>('vehicleList')
 
-  if (!user) return <LoginScreen />
+  // Blank for the moment it takes to find an existing session, rather than
+  // flashing the login screen on every reload.
+  if (!user) return restoring ? null : <LoginScreen />
 
   if (screen === 'vehicleList') {
     return <VehicleListScreen vehicles={VEHICLES} onConnected={() => setScreen('flight')} />

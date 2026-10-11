@@ -22,7 +22,10 @@ import type { VehicleStoreState } from '../../state'
  * show no mission, so nothing is drawn that the drone isn't flying.
  *
  * Separately, uploads that most-recent mission once on connect, so a mission
- * saved in an earlier session is ready to fly without reopening the planner.
+ * saved in an earlier session is ready to fly without reopening the planner,
+ * but only to a drone reporting itself disarmed. Missions are shared on the
+ * server, so the newest may be another operator's: joining a flight must
+ * never replace the mission it's flying.
  */
 export function useFlightMission(planning: boolean): Mission | null {
   const missions = useMissionStore((s) => s.missions)
@@ -32,6 +35,8 @@ export function useFlightMission(planning: boolean): Mission | null {
   const connectionState = useVehicleStore((s) => s.connectionState)
   const missionOnVehicle = useVehicleStore((s) => s.missionOnVehicle)
   const uploadMission = useVehicleStore((s) => s.uploadMission)
+  /** null until the first telemetry says whether it's armed. */
+  const disarmed = useVehicleStore((s) => (s.vehicleState ? !s.vehicleState.armed : null))
   const activity = useVehicleStore(missionActivity)
   // A pause keeps whatever it paused: on the mission, or not.
   const [onMission, setOnMission] = useState(true)
@@ -51,12 +56,13 @@ export function useFlightMission(planning: boolean): Mission | null {
 
   const uploadedRef = useRef(false)
   useEffect(() => {
-    if (uploadedRef.current || connectionState !== 'connected') return
+    if (uploadedRef.current || connectionState !== 'connected' || disarmed === null) return
     const mostRecent = missions[0]
     if (!mostRecent) return
+    // Decided on the first telemetry with a mission to send: armed means leave it alone.
     uploadedRef.current = true
-    void uploadMission(mostRecent)
-  }, [connectionState, missions, uploadMission])
+    if (disarmed) void uploadMission(mostRecent)
+  }, [connectionState, disarmed, missions, uploadMission])
 
   if (planning) return draft ?? missions[0] ?? null
   if (connectionState === 'connected') return freeFlyMission ?? (nowOnMission ? missionOnVehicle : null)
