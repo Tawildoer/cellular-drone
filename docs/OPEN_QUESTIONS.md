@@ -1,7 +1,7 @@
 # Open questions
 
 - [ ] Country or countries of operation, and which regulatory category applies (VLOS for now; BVLOS later?)
-- [ ] Do you own a SpeedyBee F405 WING already, or should we buy an H743 FC?
+- [x] Do you own a SpeedyBee F405 WING already, or should we buy an H743 FC? A SpeedyBee F405 Wing V2 is on hand for the bench and RC tuning; an H743 is needed before browser-flown missions (ADR-0002, 2026-10-11)
 - [ ] Airframe: off-the-shelf VTOL or a DIY conversion? Target endurance and range?
 - [ ] Mission payload: is the gimbal camera just for situational awareness, or for real imaging or mapping (stills, geotagging)?
 - [ ] What the onboard CV must do (detect people/vehicles, track a target, landing assist, mapping…). It sizes the compute: if the Orange Pi 5's NPU isn't enough, add a Hailo-8L over M.2 or move to a Jetson Orin NX (ADR-0018).

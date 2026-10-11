@@ -51,7 +51,7 @@ The software is ahead of the hardware, as planned. **Phase 1 runs end to end aga
 
 ### Waiting on hardware or decisions
 
-<span class="chip wait">waiting</span> **Phase 0 decisions**: country rules, airframe, flight controller (it must be an H7 class board for the Lua scripts, ADR-0002), BOM, VPS, data SIM. See [open questions](OPEN_QUESTIONS.md).
+<span class="chip wait">waiting</span> **Phase 0 decisions**: country rules, airframe, BOM (the flight controller is decided: the F405 Wing V2 for the bench and RC tuning, an H743 before browser-flown missions, ADR-0002), VPS, data SIM. See [open questions](OPEN_QUESTIONS.md).
 
 <span class="chip wait">waiting</span> **Real-SIM link test**: the Pi on an IPv6-capable SIM and modem, checking the carrier allows inbound IPv6 between mobiles: the key test for ADR-0015.
 

@@ -9,7 +9,7 @@ Guiding principle: **build software against the simulator first, then hardware o
 ## Phase 0: Requirements, regulations, budget
 - [ ] Confirm the country or countries of operation, and record the rules in `docs/OPEN_QUESTIONS.md`. Cover VLOS vs BVLOS, operator ID, remote ID, and whether a SIM may be used airborne under the carrier's terms.
 - [ ] Choose the airframe: an off-the-shelf foam VTOL or a DIY QuadPlane conversion. Record it in `docs/DECISIONS.md`.
-- [ ] Choose the flight controller (ADR-0002).
+- [x] Choose the flight controller (ADR-0002): the F405 Wing V2 on hand for the bench and RC tuning, an H743 before browser-flown missions (2026-10-11).
 - [ ] Finalise `docs/BOM.md` and order parts.
 - [ ] Rent the VPS in a region near the flying area.
 - [ ] Get a data SIM and check LTE coverage and uplink at the site.
@@ -64,6 +64,7 @@ Do this before new planner features (ADR-0017). Mapping reference: `docs/MAVLINK
   - [ ] Video track: test pattern in SITL mode
   - [ ] Gimbal lock and release (`DO_SET_ROI_LOCATION` / `ROI_NONE`, release past 500 m), gimbal attitude and `WIND` into telemetry, free fly as a rolling mission (ADR-0023, -0024, -0026)
   - [ ] `battery_rtl.lua`: return home when the battery is down to the trip home plus the reserve, proven in SITL (ADR-0025)
+  - [ ] Agent refuses a mission that needs an FC script (a clock-mode loiter) when the FC can't run scripts (`SCR_ENABLE` 0 or absent, as on the F405), and the console says why (ADR-0002)
   - [x] Local command and flight log (JSONL): `internal/flightlog`, `-flight-log-dir`; sessions, commands, uploads, FC events, state samples (2026-10-08); uploaded to the server when finished (`internal/logupload`, 2026-10-11)
   - [x] WSS client to signalling with a per-drone key; verify the Ed25519 session token before answering an offer (ADR-0030, 2026-10-11)
 - [ ] Generate JSON Schema from the zod `protocol/` definitions; Go types generated from it or hand-mirrored with tests

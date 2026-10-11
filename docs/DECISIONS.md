@@ -6,9 +6,11 @@ Short ADR-style entries. Add new ones at the bottom. Supersede old entries inste
 **Decision:** The aircraft flies **autonomous missions only** on ArduPlane (QuadPlane VTOL). **No manual control is sent to it**: no RC override, no stick or gamepad input. The browser sends only mission tasking and high-level commands (arm, start, pause, RTL, QLAND). A live video downlink is wanted, but latency isn't the top priority.
 **Consequences:** Safety depends on on-board failsafes, not the link.
 
-## ADR-0002: Flight controller (2026-10-02, open)
+## ADR-0002: Flight controller (2026-10-02; decided 2026-10-11)
 SpeedyBee F405 WING is cheap, and you already have bootloader files for it. However, ArduPilot on 1 MB-flash F4 boards drops some features (for example Lua scripting).
 **Leaning:** prototype on the F405 WING if you already own one. For the real aircraft, use an H743-class wing FC (for example Matek H743-WING). Confirm against the ArduPilot feature list for the board.
+**Decision (2026-10-11):** the operator owns a **SpeedyBee F405 Wing V2**: it's the FC for the bench and the airframe build and tuning under RC (Phases 2–3). **Before missions are flown from the browser (Phase 4), an H743-class wing FC replaces it**, because three features rely on Lua scripts on the FC, which the F405 can't run: clock-mode loiters (`loiter_until.lua`, ADR-0013), pauses that end by themselves and rejoin the leg (`pause_resume.lua`, ADR-0020), and the battery return (`battery_rtl.lua`, ADR-0025). ADR-0020 keeps them on the FC on purpose, so losing the link or the companion computer can't change the flight; moving them to the agent isn't an option.
+**Consequences:** with the F405, a clock-mode loiter would never end at its time, a pause would hold until someone resumed it, and the return home would be ArduPilot's plain battery failsafe. Until the H743 is fitted, the console must not be used to fly missions, only to watch and test the link. The agent could refuse missions that need a script when the FC has no scripting (read `SCR_ENABLE`); that check is still to write.
 
 ## ADR-0003: Browser access through a cloud relay with WireGuard (2026-10-02, SUPERSEDED by ADR-0005)
 

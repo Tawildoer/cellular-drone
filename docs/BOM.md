@@ -3,7 +3,7 @@
 | Item | Candidate | Approx. | Notes |
 |---|---|---|---|
 | Airframe | Foam VTOL (e.g. Heewing T2 VTOL class) or DIY QuadPlane conversion | €200–600 | Room for the SBC, modem and antennas. Check CG. |
-| Flight controller | SpeedyBee F405 WING (prototype) / H743 wing FC (final) | €40–90 | ADR-0002 |
+| Flight controller | SpeedyBee F405 Wing V2 (owned: bench and RC tuning) / H743 wing FC, e.g. Matek H743-WING (to buy before Phase 4: Lua scripts) | €40–90 | ADR-0002 |
 | GPS + compass | M10 GPS with compass | €25–40 | Away from the modem and antennas |
 | Airspeed sensor | Digital (MS4525 / DLVR) | €20–40 | Strongly recommended for fixed-wing auto |
 | Companion computer | Orange Pi 5 (RK3588S, 8 GB+ RAM), with heatsink/fan and eMMC or NVMe | €100–150 | ADR-0018 (replaces Radxa Zero 3W, ADR-0006). Weigh it with cooling before choosing the airframe. |
