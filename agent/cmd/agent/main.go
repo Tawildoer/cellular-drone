@@ -24,6 +24,7 @@ import (
 	"github.com/tomwildoer/cellular-drone/agent/internal/auth"
 	"github.com/tomwildoer/cellular-drone/agent/internal/fc"
 	"github.com/tomwildoer/cellular-drone/agent/internal/flightlog"
+	"github.com/tomwildoer/cellular-drone/agent/internal/logupload"
 	"github.com/tomwildoer/cellular-drone/agent/internal/protocol"
 	"github.com/tomwildoer/cellular-drone/agent/internal/session"
 	"github.com/tomwildoer/cellular-drone/agent/internal/signalling"
@@ -59,6 +60,8 @@ func main() {
 	serverPubkey := flag.String("server-pubkey", "", "the server's session-signing public key (server: npm run cli -- keys:show); without it every browser is refused")
 	insecureDevTokens := flag.Bool("insecure-dev-tokens", false, "with no -server-pubkey, accept unsigned session tokens: anyone who can reach the signalling server can command the vehicle. SITL and bench only (SECURITY.md)")
 	flightLogDir := flag.String("flight-log-dir", "flightlogs", "directory for the flight log: commands, uploads, FC events and state samples, one JSONL file per start (empty = off)")
+	uploadLogs := flag.Duration("upload-logs", 5*time.Minute, "how often to upload finished flight logs to the server, signed with -key (0 = never)")
+	apiURL := flag.String("api", "", "the server's base URL for log uploads (default: from -signal, ws→http, wss→https)")
 	homeLat := flag.Float64("home-lat", -37.861, "reported home latitude")
 	homeLon := flag.Float64("home-lon", 145.062, "reported home longitude")
 	iceDisconnected := flag.Duration("ice-disconnected", 4*time.Second, "ICE disconnected timeout")
@@ -199,6 +202,20 @@ func main() {
 		"fc": *fcAddr, "signal": *signalURL, "publicKey": publicKey,
 		"tokensVerified": serverKey != nil, "insecureDevTokens": *insecureDevTokens && serverKey == nil,
 	})
+	if flightLog != nil && *uploadLogs > 0 {
+		api := *apiURL
+		if api == "" {
+			if api, err = logupload.APIFromSignalURL(*signalURL); err != nil {
+				log.Error("flight_log_upload_off", "error", err.Error())
+			}
+		}
+		if api != "" {
+			go logupload.Run(ctx, logupload.Config{
+				Dir: *flightLogDir, Current: flightLog.Path(), API: api, VehicleID: *vehicleID,
+				Key: droneKey, Clock: clock, Interval: *uploadLogs, Log: log,
+			})
+		}
+	}
 	client.Run(ctx)
 	manager.CloseAll("agent shutting down")
 	flightLog.Agent("stopping", nil)

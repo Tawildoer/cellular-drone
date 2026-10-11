@@ -2,6 +2,11 @@
 
 What each working session delivered, newest first. Commit hashes link to the change on GitHub. Add an entry when work lands; tick the matching boxes in [the plan](PLAN.md) in the same change.
 
+## 2026-10-11: flight logs reach the server (Phase 1c, part 3)
+
+- **The flight record survives the drone**: the agent uploads each finished flight log to the server every 5 minutes, signed with its own key, and keeps its copy (moved into `uploaded/`). The log being written waits for the next start. Uploads wait out a dead link; a log the server already holds is a harmless retry.
+- Signed-in users can list and download a drone's logs (`/api/vehicles/:id/logs`); a page for them in the console is still to come.
+
 ## 2026-10-11: drone keys and signed session tokens (Phase 1c, part 2)
 
 - **Drones prove who they are** (ADR-0030): the agent makes its own Ed25519 key (`-key`, `-print-key`), the server's registry holds the public half (`npm run cli -- drone:add`), and on connect the drone signs a random challenge before it's let in. Signalling is now v2.

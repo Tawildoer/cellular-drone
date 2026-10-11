@@ -105,6 +105,16 @@ func SignChallenge(key ed25519.PrivateKey, vehicleID, nonce string) string {
 	return b64.EncodeToString(ed25519.Sign(key, []byte(VehicleAuthContext+vehicleID+"\n"+nonce)))
 }
 
+// LogUploadContext matches LOG_UPLOAD_CONTEXT in packages/protocol/src/auth.ts.
+const LogUploadContext = "cellular-drone/log-upload/v1\n"
+
+// SignLogUpload signs a flight-log upload: the vehicle, the file's name, the
+// timestamp (ms, server clock) and the body's SHA-256 in hex.
+func SignLogUpload(key ed25519.PrivateKey, vehicleID, name string, timestampMs int64, bodySha256Hex string) string {
+	msg := fmt.Sprintf("%s%s\n%s\n%d\n%s", LogUploadContext, vehicleID, name, timestampMs, bodySha256Hex)
+	return b64.EncodeToString(ed25519.Sign(key, []byte(msg)))
+}
+
 // Claims mirrors sessionTokenClaimsSchema.
 type Claims struct {
 	V         int    `json:"v"`

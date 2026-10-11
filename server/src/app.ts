@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import { registerAuth } from './auth.ts'
 import type { Config } from './config.ts'
 import type { Db } from './db.ts'
+import { registerFlightLogs } from './flightLogs.ts'
 import { loadOrCreateSigningKey, type SigningKey } from './keys.ts'
 import { registerMissions } from './missions.ts'
 import { registerSignalling } from './signalling.ts'
@@ -24,6 +25,7 @@ export async function buildApp(
   app.get('/healthz', async (_req, reply) => reply.type('text/plain').send('ok'))
   const auth = registerAuth(app, db, config)
   registerMissions(app, db)
+  registerFlightLogs(app, db, config)
   registerSignalling(app, auth, db, opts.signingKey ?? loadOrCreateSigningKey(config.signingKeyFile), config)
   return app
 }

@@ -64,7 +64,7 @@ Do this before new planner features (ADR-0017). Mapping reference: `docs/MAVLINK
   - [ ] Video track: test pattern in SITL mode
   - [ ] Gimbal lock and release (`DO_SET_ROI_LOCATION` / `ROI_NONE`, release past 500 m), gimbal attitude and `WIND` into telemetry, free fly as a rolling mission (ADR-0023, -0024, -0026)
   - [ ] `battery_rtl.lua`: return home when the battery is down to the trip home plus the reserve, proven in SITL (ADR-0025)
-  - [x] Local command and flight log (JSONL): `internal/flightlog`, `-flight-log-dir`; sessions, commands, uploads, FC events, state samples (2026-10-08). Upload to the server is Phase 1c
+  - [x] Local command and flight log (JSONL): `internal/flightlog`, `-flight-log-dir`; sessions, commands, uploads, FC events, state samples (2026-10-08); uploaded to the server when finished (`internal/logupload`, 2026-10-11)
   - [x] WSS client to signalling with a per-drone key; verify the Ed25519 session token before answering an offer (ADR-0030, 2026-10-11)
 - [ ] Generate JSON Schema from the zod `protocol/` definitions; Go types generated from it or hand-mirrored with tests
 
@@ -75,7 +75,7 @@ Do this before new planner features (ADR-0017). Mapping reference: `docs/MAVLINK
   - [x] Drone registry (per-drone keys) and session-token minting (Ed25519) (ADR-0030, 2026-10-11)
   - [x] Signalling WebSocket relay between the browser and the drone; operators need a session cookie (2026-10-11; drones authenticate in the next step)
   - [x] Missions CRUD, validated against the protocol's `missionSchema` (2026-10-11)
-  - [ ] Flight-log upload endpoint, signed with the drone key
+  - [x] Flight-log upload endpoint, signed with the drone key; users list and download them (2026-10-11)
   - [ ] `docker-compose.yml`: server, Caddy, coturn (with time-limited TURN credentials)
 - [x] `web/`: `WebRtcLink`, `HttpAuthClient`, `HttpMissionRepository`. All pass the same contract tests. Switch with `VITE_VEHICLE_LINK=webrtc` (`VITE_BACKEND` picks the server or local storage; 2026-10-11)
 - [ ] Test end to end in SITL: log in from a phone on mobile data → plan → upload → arm → fly → pause/resume → RTL → land.

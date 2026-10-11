@@ -20,5 +20,13 @@
     "vehicleId": "drone-1",
     "nonce": "q2Hn0x6k3Vd9fJ8mW1sYtRzP4cLbA7eGuNoXiK5vQhE",
     "signature": "Qaj0IXDw0DGkhbOVaojadwjmHt57_5VAiqGBcBB7igyyDcyLQf24qxh6rAd_YV7IpxYD9eiRF70zqRCMbwB2Aw"
+  },
+  "logUpload": {
+    "vehicleId": "drone-1",
+    "name": "flight-20261011T030000Z.jsonl",
+    "timestampMs": 1791700000123,
+    "body": "{\"ts\":\"2026-10-11T03:00:00Z\",\"kind\":\"agent\",\"vehicle\":\"drone-1\",\"what\":\"started\"}\n",
+    "bodySha256Hex": "b8afb30831125f16118b4436cd169e2c82799d2c5f9bdfdf1299eeb297e0ca83",
+    "signature": "FOaolH3HELXZwU1Ip_JVfnkwVK_lR7wXg2dLDquNcM2BT8NtToMD0ymjn85rjNLpEswmwU0N7nurBvR9W8V4BQ"
   }
 }

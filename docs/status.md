@@ -32,7 +32,7 @@ The software is ahead of the hardware, as planned. **Phase 1 runs end to end aga
 
 <span class="chip done">done</span> **ArduPlane SITL** (Plane 4.7.1 QuadPlane) in Docker, with the project's failsafe params and two FC Lua scripts: clock-mode loiters (`loiter_until.lua`) and pauses that can't strand the aircraft and rejoin the planned leg (`pause_resume.lua`).
 
-<span class="chip done">done</span> **Server authentication** (ADR-0030, not yet deployed): argon2id logins with session cookies, missions stored on the server, drones proving their own Ed25519 key on connect, and session tokens the server signs and the agent checks before answering a browser. The SITL tests run with real keys.
+<span class="chip done">done</span> **Server authentication** (ADR-0030, not yet deployed): argon2id logins with session cookies, missions stored on the server, drones proving their own Ed25519 key on connect, and session tokens the server signs and the agent checks before answering a browser; finished flight logs uploaded to the server. The SITL tests run with real keys.
 
 <span class="chip done">done</span> **Go agent against SITL**: MAVLink2 link, mode mapping, command whitelist, mission and fence upload with readback, RC override from the mode switch itself, start only with the switch at AUTO, and a fsynced flight log of every command, upload, FC event and state sample.
 
@@ -43,8 +43,8 @@ The software is ahead of the hardware, as planned. **Phase 1 runs end to end aga
 <span class="chip next">next</span> **Finish 1b**
 :   Tune the mock to SITL (25 m/s cruise, waypoint-reached and RTL-altitude behaviour). More SITL scenarios: browser closed mid-mission, agent killed mid-flight, mission changed from another ground station. The slow check that a pilot's LOITER isn't time-limited (ADR-0020). Video test pattern in SITL mode. Go protocol types held to the zod schemas by tests.
 
-<span class="chip next">next</span> **Phase 1c: the real server** (ADR-0030; logins, missions, drone keys and signed session tokens done)
-:   Still to build: flight-log upload, docker-compose with Caddy, deploying to the VPS. That unlocks the Phase 1 exit test: a phone on mobile data, through the VPS, flying SITL.
+<span class="chip next">next</span> **Phase 1c: the real server** (ADR-0030; logins, missions, drone keys, signed session tokens and flight-log upload done)
+:   Still to build: docker-compose with Caddy, deploying to the VPS. That unlocks the Phase 1 exit test: a phone on mobile data, through the VPS, flying SITL.
 
 <span class="chip next">next</span> **1a loose ends**
 :   A deliberate Chrome laptop check. (Done: the fault-injection panel, the menu's Simulator section, and the Playwright smoke test against the mock, `npm run e2e`.) Phone layout stays deferred.

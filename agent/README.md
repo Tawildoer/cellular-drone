@@ -94,10 +94,11 @@ reading glass-to-glass latency off the browser.
 | `-server-pubkey` | none | the server's session-signing key (`npm run cli -- keys:show`). Without it every browser is refused |
 | `-insecure-dev-tokens` | off | with no `-server-pubkey`, accept unsigned session tokens. **Bench only**: anyone who can reach the signalling server can command the vehicle (`../SECURITY.md`) |
 | `-flight-log-dir` | `flightlogs` | the flight log: one JSONL file per start, empty = off (see below) |
+| `-upload-logs` / `-api` | `5m` / from `-signal` | how often to upload finished flight logs (0 = never), and the server's URL for it |
 
 ## Flight log
 
-The drone's own audit record (ARCHITECTURE.md, command model), apart from the debug log and written whether or not a browser is connected. One file per agent start, `flight-<UTC start>.jsonl`. Every line has `ts`, `kind` and `vehicle`:
+The drone's own audit record (ARCHITECTURE.md, command model), apart from the debug log and written whether or not a browser is connected. One file per agent start, `flight-<UTC start>.jsonl`. Finished files (every one but the file being written) are uploaded to the server every `-upload-logs` (5 min), signed with the drone's key, and moved into `uploaded/`; nothing is deleted. Every line has `ts`, `kind` and `vehicle`:
 
 | `kind` | When | Fields |
 | --- | --- | --- |

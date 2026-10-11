@@ -25,9 +25,9 @@ Then run the agent (`../agent/README.md`) and the console with
 `VITE_VEHICLE_LINK=webrtc npm run dev` in `web/`: Vite proxies `/api` and
 `/signal` to this server, so the session cookie works as in a deploy.
 
-`data/` holds the database and the signing key: it's gitignored, and it's
-what to back up. Losing the signing key only means giving every drone the new
-public key.
+`data/` holds the database, the signing key and the uploaded flight logs:
+it's gitignored, and it's what to back up. Losing the signing key only means
+giving every drone the new public key.
 
 ## Admin
 
@@ -50,6 +50,8 @@ npm run cli -- keys:show
 | `POST /api/logout` | |
 | `GET /api/me` | the signed-in user, or 401 |
 | `GET/POST /api/missions`, `GET/PUT/DELETE /api/missions/:id` | missions shared by every signed-in user, checked against the protocol's `missionSchema` |
+| `POST /api/vehicles/:id/logs/:name` | a drone uploading a finished flight log, signed with its key (`X-Drone-Timestamp`, `X-Drone-Signature`) |
+| `GET /api/vehicles/:id/logs`, `GET /api/vehicles/:id/logs/:name` | signed-in users: the uploaded flight logs, and one to download |
 | `GET /healthz` | |
 | `/signal` (WebSocket) | signalling v2 (`packages/protocol/src/signalling.ts`): operators need the session cookie; drones sign a challenge |
 

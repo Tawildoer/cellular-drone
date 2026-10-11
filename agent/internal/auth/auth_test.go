@@ -20,6 +20,13 @@ type vectors struct {
 		Claims          Claims `json:"claims"`
 		Token           string `json:"token"`
 	} `json:"session"`
+	LogUpload struct {
+		VehicleID     string `json:"vehicleId"`
+		Name          string `json:"name"`
+		TimestampMs   int64  `json:"timestampMs"`
+		BodySha256Hex string `json:"bodySha256Hex"`
+		Signature     string `json:"signature"`
+	} `json:"logUpload"`
 	VehicleAuth struct {
 		DroneSeedHex   string `json:"droneSeedHex"`
 		DronePublicKey string `json:"dronePublicKey"`
@@ -59,6 +66,15 @@ func TestChallengeSignatureMatchesServer(t *testing.T) {
 	}
 	if got := SignChallenge(key, v.VehicleID, v.Nonce); got != v.Signature {
 		t.Errorf("signature %s, want %s", got, v.Signature)
+	}
+}
+
+func TestLogUploadSignatureMatchesServer(t *testing.T) {
+	v := loadVectors(t)
+	key := keyFromSeed(t, v.VehicleAuth.DroneSeedHex)
+	u := v.LogUpload
+	if got := SignLogUpload(key, u.VehicleID, u.Name, u.TimestampMs, u.BodySha256Hex); got != u.Signature {
+		t.Errorf("signature %s, want %s", got, u.Signature)
 	}
 }
 

@@ -40,3 +40,20 @@ export const sessionTokenClaimsSchema = z.object({
 })
 
 export type SessionTokenClaims = z.infer<typeof sessionTokenClaimsSchema>
+
+/**
+ * A drone uploading a finished flight log (`POST /api/vehicles/:id/logs/:name`,
+ * body the JSONL file): Ed25519 with the drone's key over
+ * `context + vehicleId + "\n" + name + "\n" + timestamp + "\n" + sha256(body) hex`,
+ * sent as the X-Drone-Timestamp (ms, server clock) and X-Drone-Signature
+ * (base64url) headers. The server accepts it within LOG_UPLOAD_WINDOW_MS of
+ * its own clock.
+ */
+export const LOG_UPLOAD_CONTEXT = 'cellular-drone/log-upload/v1\n'
+export const LOG_UPLOAD_WINDOW_MS = 5 * 60 * 1000
+/** What the agent names its flight logs (agent/internal/flightlog). */
+export const FLIGHT_LOG_NAME = /^flight-\d{8}T\d{6}Z\.jsonl$/
+
+export function logUploadMessage(vehicleId: string, name: string, timestampMs: number, bodySha256Hex: string): string {
+  return `${LOG_UPLOAD_CONTEXT}${vehicleId}\n${name}\n${timestampMs}\n${bodySha256Hex}`
+}

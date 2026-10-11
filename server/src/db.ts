@@ -41,6 +41,16 @@ const MIGRATIONS: string[] = [
     created_at INTEGER NOT NULL
   );
   `,
+  `
+  CREATE TABLE flight_logs (
+    vehicle_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    bytes INTEGER NOT NULL,
+    uploaded_at INTEGER NOT NULL,
+    PRIMARY KEY (vehicle_id, name)
+  );
+  `,
 ]
 
 export type Db = DatabaseSync

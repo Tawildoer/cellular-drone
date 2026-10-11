@@ -49,10 +49,15 @@ export function parsePublicKey(raw: string): KeyObject {
   return createPublicKey({ key: { kty: 'OKP', crv: 'Ed25519', x: raw }, format: 'jwk' })
 }
 
-export function verifyVehicleSignature(publicKey: KeyObject, vehicleId: string, nonce: string, signature: string): boolean {
+/** An Ed25519 signature (base64url) over `message`. */
+export function verifySignature(publicKey: KeyObject, message: string, signature: string): boolean {
   const sig = Buffer.from(signature, 'base64url')
   if (sig.length !== 64) return false
-  return verify(null, Buffer.from(vehicleAuthMessage(vehicleId, nonce)), publicKey, sig)
+  return verify(null, Buffer.from(message), publicKey, sig)
+}
+
+export function verifyVehicleSignature(publicKey: KeyObject, vehicleId: string, nonce: string, signature: string): boolean {
+  return verifySignature(publicKey, vehicleAuthMessage(vehicleId, nonce), signature)
 }
 
 export function mintSessionToken(key: KeyObject, claims: Omit<SessionTokenClaims, 'v'>): string {

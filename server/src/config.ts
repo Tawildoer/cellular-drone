@@ -17,6 +17,8 @@ export interface Config {
   /** How long a signed session token is good for: only long enough to
    * reach the drone with the offer it rides on. */
   sessionTokenTtlS: number
+  /** Where uploaded flight logs are kept, one directory per vehicle. */
+  flightLogDir: string
   /** Origins allowed to make state-changing requests and open signalling with
    * a session cookie (e.g. https://fly.example.com). Empty = same host only. */
   allowedOrigins: string[]
@@ -49,6 +51,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     sessionTtlMs: Number(env.SESSION_TTL_HOURS ?? 12) * HOUR_MS,
     signingKeyFile: env.SESSION_SIGNING_KEY_FILE ?? 'data/session-signing.key',
     sessionTokenTtlS: Number(env.SESSION_TOKEN_TTL_S ?? 60),
+    flightLogDir: env.FLIGHT_LOG_DIR ?? 'data/flightlogs',
     allowedOrigins: list(env.ALLOWED_ORIGINS),
     trustProxy: bool(env.TRUST_PROXY, false),
   }
