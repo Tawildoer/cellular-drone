@@ -38,9 +38,10 @@ Order: **frontend first against a mock vehicle**, then the real backend undernea
 - [x] UI: gimbal line of sight and click-to-lock, free fly from the map, battery return and warnings, weather overlays with wind-aware estimates (ADR-0023 to ADR-0026, 2026-10-10; mock only)
 - [x] UI: colour the trail and planned route by wind, cell signal, height or speed; cell signal in telemetry (simulated by the mock); coverage remembered from earlier flights (ADR-0028, 2026-10-10)
 - [x] Mac app (`desktop/`, ADR-0027): Electron shell on the same web build, over-the-air UI updates from the deploy, starts offline (2026-10-10)
+- [x] UI: switch the live camera (gimbal, aux) from the video panel; cameras in telemetry, `video.source` command (ADR-0029, 2026-10-10; mock only, the agent refuses it until Phase 2)
 - [ ] Mac app native features: serial ground radio, offline map packs, background alerts; run-time link choice
 - [x] Dev panel for MockLink fault injection: the menu's Simulator section (link drop, delay, telemetry loss, RC takeover, low battery, failsafes, wind); the mock drone now flies on while its link is down (2026-10-10)
-- [ ] Playwright smoke: login → plan → upload → arm → start → pause/resume → RTL
+- [x] Playwright smoke: login → plan → upload → arm → start → pause/resume → RTL (`npm run e2e`: `web/e2e/smoke.spec.ts`, a grounded mock drone at 5× speed, ~40 s; 2026-10-10)
 - [ ] Check it on Chrome desktop (laptop, primary target now). Chrome Android / iOS Safari (phone layout) deferred — same components, verify later.
 
 **Exit 1a:** the whole operator workflow is usable end to end against MockLink on phone and laptop.
@@ -97,7 +98,7 @@ Do this before new planner features (ADR-0017). Mapping reference: `docs/MAVLINK
 - [ ] Orange Pi 5 (ADR-0018): flash a minimal Debian/Armbian. Cross-compile the agent (`GOARCH=arm64`). Run it as a systemd service.
 - [ ] Bring up the LTE modem: ModemManager/NetworkManager, APN, reconnect watchdog. Report signal metrics (RSRP, SINR, band) as telemetry.
 - [ ] Gimbal camera: forward its Ethernet H.264/H.265 into the Pion track without transcoding. Measure glass-to-glass latency.
-- [ ] Aux cameras: hardware H.264 through the RK MPP encoder (GStreamer `mpph264enc`) into Pion; switch the one live stream between gimbal and aux cameras. Measure latency, bitrate and CPU.
+- [ ] Aux cameras: hardware H.264 through the RK MPP encoder (GStreamer `mpph264enc`) into Pion; switch the one live stream between gimbal and aux cameras (`video.source` and the `video` telemetry field, ADR-0029). Measure latency, bitrate and CPU.
 - [ ] CV cameras: capture into an RKNN model on the NPU; send results (not video) to the browser. Measure CPU, NPU load and power.
 - [ ] UART to the FC (MAVLink2, 921600 baud). `SERIALx_PROTOCOL=2`.
 - [ ] Power: a 5 V 3 A BEC, plus a capacitor near the modem for TX peaks. Measure total draw.

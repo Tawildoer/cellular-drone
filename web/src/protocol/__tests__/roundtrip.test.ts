@@ -98,3 +98,21 @@ describe('messageSchema', () => {
     expect(messageSchema.safeParse(message).success).toBe(true)
   })
 })
+
+describe('cameras (ADR-0029)', () => {
+  it('round-trips the camera list in telemetry and the switch command', () => {
+    const withVideo = {
+      ...(vehicleState as object),
+      video: { cameras: [{ id: 'gimbal', name: 'Gimbal', kind: 'gimbal' }, { id: 'nose', name: 'Nose', kind: 'aux' }], activeCameraId: 'nose' },
+    }
+    const state = decodeMessage(encodeMessage(createMessage('telemetry.state', withVideo as Message['payload'])))
+    expect(state?.payload).toEqual(withVideo)
+    const cmd = decodeMessage(encodeMessage(createMessage('cmd.request', { type: 'video.source', cameraId: 'nose' })))
+    expect(cmd?.payload).toEqual({ type: 'video.source', cameraId: 'nose' })
+  })
+
+  it('refuses a switch with no camera named', () => {
+    const raw = JSON.stringify({ v: 1, type: 'cmd.request', ts: 1, payload: { type: 'video.source', cameraId: '' } })
+    expect(decodeMessage(raw)).toBeNull()
+  })
+})

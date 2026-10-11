@@ -22,6 +22,8 @@ The software is ahead of the hardware, as planned. **Phase 1 runs end to end aga
 
 <span class="chip done">done</span> **Mac app** (ADR-0027): *Ground Control*, an Electron shell on the same web build, updated over the air by every deploy and able to start offline. The web app stays first-class.
 
+<span class="chip done">done</span> **Camera switching** (ADR-0029, mock only): pick the gimbal or an aux camera for the live stream from the video panel.
+
 <span class="chip done">done</span> **Path colours and coverage** (ADR-0028): the trail and route coloured by wind, cell signal, height or speed; cell signal in telemetry, simulated by the mock and remembered from flight to flight.
 
 <span class="chip done">done</span> **Mission planning tools**: height profile over real terrain with clearance warnings, distance and time at ArduPlane's figures, and *Follow terrain at X m* (ADR-0021).
@@ -43,7 +45,7 @@ The software is ahead of the hardware, as planned. **Phase 1 runs end to end aga
 :   Today the server is only a signalling relay. Still to build: argon2id login, drone registry and Ed25519 session tokens (so the agent's token check stops being a stub), the agent's per-drone key, mission storage and flight-log upload, deploying to the VPS. That unlocks the Phase 1 exit test: a phone on mobile data, through the VPS, flying SITL.
 
 <span class="chip next">next</span> **1a loose ends**
-:   A Playwright smoke test against the mock, and a deliberate Chrome laptop check. (The fault-injection panel is done: the menu's Simulator section.) Phone layout stays deferred.
+:   A deliberate Chrome laptop check. (Done: the fault-injection panel, the menu's Simulator section, and the Playwright smoke test against the mock, `npm run e2e`.) Phone layout stays deferred.
 
 ### Waiting on hardware or decisions
 

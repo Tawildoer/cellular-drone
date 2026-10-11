@@ -87,7 +87,7 @@ All real links use **the same `protocol/` messages**, so swapping transports tou
 ## 6. Testing
 - Vitest unit tests for `domain/` (validation, checklist) and `protocol/` (schema round-trips).
 - A **contract test suite** for `VehicleLink` (`link/__tests__/contract.ts`). Every implementation must pass it. That's how we know a new backend is a drop-in.
-- Playwright smoke test: login → plan mission → upload → arm → start → RTL, against MockLink.
+- Playwright smoke test (`npm run e2e`, `web/e2e/smoke.spec.ts`): login → plan mission → upload → arm → start → pause/resume → RTL, against MockLink. It runs its own dev server on 5175 with a test-only grounded mock drone (`VITE_MOCK_GROUND_DRONE=true`, `VITE_MOCK_TIME_SCALE=5`).
 
 ## Stack
 React + Vite + TypeScript (strict), MapLibre GL (OSM/open tiles), Zustand, zod, Tailwind + shadcn/ui, Vitest, Playwright. Laptop-primary for now (the operator's base station); verify phone layout later — same components, not a separate build.

@@ -17,6 +17,9 @@ export interface MockLinkOptions {
   autoFly?: { mission: Mission; warmUpS?: number }
 }
 
+/** How long a camera switch shows black before the new picture. */
+const CAMERA_SWITCH_MS = 500
+
 function delay(ms: number): Promise<void> {
   return ms <= 0 ? Promise.resolve() : new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -44,6 +47,8 @@ export class MockLink implements VehicleLink {
 
   private videoStream: MediaStream | null = null
   private videoDrawTimer: ReturnType<typeof setInterval> | null = null
+  private shownCameraId: string | null = null
+  private cameraSwitchedAtMs = 0
 
   private readonly stateListeners = new Set<(s: VehicleState) => void>()
   private readonly statusListeners = new Set<(s: LinkStatus) => void>()
@@ -262,26 +267,93 @@ export class MockLink implements VehicleLink {
     for (const cb of this.videoListeners) cb(this.videoStream)
   }
 
+  /** A test picture per camera (ADR-0029): the gimbal looking ahead and
+   * down, the nose camera at the horizon with a centre mark, the belly
+   * camera straight down at fields passing underneath. Switching shows a
+   * moment of black, as a real stream does while the new camera's first
+   * keyframe arrives. */
   private drawVideoFrame(ctx: CanvasRenderingContext2D): void {
     const { width: w, height: h } = ctx.canvas
-    const rollDeg = Math.sin(Date.now() / 2000) * 8
     const state = this.engine.buildVehicleState()
+    const camera = this.engine.getActiveCamera()
+    if (camera.id !== this.shownCameraId) {
+      // Black only for a switch, not the stream's first frame.
+      if (this.shownCameraId !== null) this.cameraSwitchedAtMs = Date.now()
+      this.shownCameraId = camera.id
+    }
 
-    ctx.save()
-    ctx.translate(w / 2, h / 2)
-    ctx.rotate((rollDeg * Math.PI) / 180)
-    ctx.fillStyle = '#4a7fb5'
-    ctx.fillRect(-w, -h, 2 * w, h)
-    ctx.fillStyle = '#5b3a29'
-    ctx.fillRect(-w, 0, 2 * w, h)
-    ctx.restore()
+    if (Date.now() - this.cameraSwitchedAtMs < CAMERA_SWITCH_MS) {
+      ctx.fillStyle = '#000'
+      ctx.fillRect(0, 0, w, h)
+      ctx.fillStyle = '#888'
+      ctx.font = '16px monospace'
+      ctx.fillText(`Switching to ${camera.name}…`, 12, 24)
+      return
+    }
+
+    if (camera.id === 'belly') {
+      this.drawBellyView(ctx, state.position.lat, state.position.lon, state.position.altRelM, state.attitude.yawDeg)
+    } else {
+      const rollDeg = Math.sin(Date.now() / 2000) * 8
+      // The gimbal looks down 45°, which lifts the horizon up the frame.
+      const horizonY = camera.kind === 'gimbal' ? -h * 0.3 : 0
+      ctx.save()
+      ctx.translate(w / 2, h / 2)
+      ctx.rotate((rollDeg * Math.PI) / 180)
+      ctx.fillStyle = '#4a7fb5'
+      ctx.fillRect(-w, -2 * h + horizonY, 2 * w, 2 * h)
+      ctx.fillStyle = '#5b3a29'
+      ctx.fillRect(-w, horizonY, 2 * w, 2 * h)
+      ctx.restore()
+      if (camera.id === 'nose') {
+        ctx.strokeStyle = '#fff'
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.moveTo(w / 2 - 24, h / 2)
+        ctx.lineTo(w / 2 - 8, h / 2)
+        ctx.moveTo(w / 2 + 8, h / 2)
+        ctx.lineTo(w / 2 + 24, h / 2)
+        ctx.stroke()
+      }
+    }
 
     ctx.fillStyle = '#fff'
     ctx.font = '16px monospace'
-    ctx.fillText(`HDG ${state.attitude.yawDeg.toFixed(0).padStart(3, '0')}`, 12, 24)
-    ctx.fillText(`ALT ${state.position.altRelM.toFixed(0)}m`, 12, 44)
-    ctx.fillText(`SPD ${state.groundSpeedMps.toFixed(1)}m/s`, 12, 64)
-    ctx.fillText(`VID ${this.engine.getVideoPreset().toUpperCase()}`, 12, 84)
+    ctx.fillText(`CAM ${camera.name.toUpperCase()}`, 12, 24)
+    ctx.fillText(`HDG ${state.attitude.yawDeg.toFixed(0).padStart(3, '0')}`, 12, 44)
+    ctx.fillText(`ALT ${state.position.altRelM.toFixed(0)}m`, 12, 64)
+    ctx.fillText(`SPD ${state.groundSpeedMps.toFixed(1)}m/s`, 12, 84)
+    ctx.fillText(`VID ${this.engine.getVideoPreset().toUpperCase()}`, 12, 104)
+  }
+
+  /** Straight down: a patchwork of fields, 60 m squares, sliding past as
+   * the drone flies and shrinking as it climbs; heading up the frame. */
+  private drawBellyView(ctx: CanvasRenderingContext2D, lat: number, lon: number, altM: number, headingDeg: number): void {
+    const { width: w, height: h } = ctx.canvas
+    const field = 60
+    const northM = lat * 111_320
+    const eastM = lon * 111_320 * Math.cos((lat * Math.PI) / 180)
+    // A 90° lens: the frame's width covers twice the height on the ground.
+    const pxPerM = w / Math.max(4, 2 * Math.max(1, altM))
+    const sizePx = field * pxPerM
+    ctx.save()
+    ctx.fillStyle = '#4f6b34'
+    ctx.fillRect(0, 0, w, h)
+    ctx.translate(w / 2, h / 2)
+    ctx.rotate((-headingDeg * Math.PI) / 180)
+    const reach = Math.ceil(Math.hypot(w, h) / 2 / sizePx) + 1
+    const col0 = Math.floor(eastM / field)
+    const row0 = Math.floor(northM / field)
+    for (let r = -reach; r <= reach; r++) {
+      for (let c = -reach; c <= reach; c++) {
+        const shade = ((col0 + c) * 7 + (row0 + r) * 13) % 4
+        ctx.fillStyle = ['#4f6b34', '#6b7d3a', '#8a7a45', '#3e5a2b'][Math.abs(shade)]!
+        const x = ((col0 + c) * field - eastM) * pxPerM
+        const y = -((row0 + r + 1) * field - northM) * pxPerM
+        ctx.fillRect(x, y, sizePx - 1, sizePx - 1)
+      }
+    }
+    ctx.restore()
   }
 
   private stopVideo(): void {

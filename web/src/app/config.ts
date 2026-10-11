@@ -47,6 +47,12 @@ export const DEMO_MISSION: Mission = {
 }
 
 const configuredKind = import.meta.env.VITE_VEHICLE_LINK ?? 'mock'
+/** Test builds only (the Playwright smoke test): a mock build also lists
+ * "Drone 1", a plain simulated drone that starts landed and disarmed, unlike
+ * the demo drone, which opens already flying its patrol. */
+const mockGroundDrone = configuredKind === 'mock' && import.meta.env.VITE_MOCK_GROUND_DRONE === 'true'
+/** Sim speed for that drone, so a test flight doesn't take minutes. */
+const mockTimeScale = Number(import.meta.env.VITE_MOCK_TIME_SCALE ?? 1) || 1
 
 /**
  * The demo drone is always present and always runs the in-browser sim, so the
@@ -55,7 +61,7 @@ const configuredKind = import.meta.env.VITE_VEHICLE_LINK ?? 'mock'
  */
 export const VEHICLES: VehicleDescriptor[] = [
   { id: DEMO_VEHICLE_ID, name: 'Demo Drone', demo: true },
-  ...(configuredKind === 'mock' ? [] : [{ id: 'drone-1', name: 'Drone 1' }]),
+  ...(configuredKind === 'mock' && !mockGroundDrone ? [] : [{ id: 'drone-1', name: 'Drone 1' }]),
 ]
 
 export interface AppServices {
@@ -105,7 +111,7 @@ function createConfiguredLink(): VehicleLink {
       })
     case 'mock':
     default:
-      return new MockLink()
+      return new MockLink({ timeScale: mockTimeScale })
   }
 }
 

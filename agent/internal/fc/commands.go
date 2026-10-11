@@ -47,6 +47,10 @@ func (l *Link) Command(ctx context.Context, cmd protocol.Command) protocol.Comma
 	case "video.config":
 		// Agent-local, not MAVLink: the encoder doesn't take presets yet.
 		return protocol.Rejected("video presets aren't implemented in the agent yet")
+	case "video.source":
+		// Agent-local, camera only (ADR-0029): which camera feeds the one
+		// WebRTC video track. To come with the cameras in Phase 2.
+		return protocol.Rejected("camera switching isn't implemented in the agent yet")
 	case "gimbal.lock", "gimbal.release":
 		// Camera only, allowed under RC override (ADR-0023). To come:
 		// MAV_CMD_DO_SET_ROI_LOCATION, released with MAV_CMD_DO_SET_ROI_NONE

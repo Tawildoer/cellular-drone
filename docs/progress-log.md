@@ -2,6 +2,16 @@
 
 What each working session delivered, newest first. Commit hashes link to the change on GitHub. Add an entry when work lands; tick the matching boxes in [the plan](PLAN.md) in the same change.
 
+## 2026-10-10: camera switching
+
+- **Pick the live camera** (ADR-0029): with the video full size, a switcher shows one button per camera the drone reports (the gimbal camera and the aux cameras). A switch shows as pending until the drone reports the new camera, and says why if it's refused; the picture-in-picture tile names the camera being sent.
+- **Protocol**: cameras in telemetry (`video`) and a `video.source` command. Camera only, so it works while the RC pilot has control. The agent refuses it until the cameras exist (Phase 2).
+- **Mock**: three cameras with their own test pictures: the gimbal looking ahead and down, the nose camera at the horizon, the belly camera straight down at fields passing underneath, with a moment of black on each switch.
+
+## 2026-10-10: smoke test against the mock
+
+- **`npm run e2e`** (`web/e2e/smoke.spec.ts`): logs in, plans a mission by clicking the map, saves it (which uploads it), arms, starts, pauses, resumes, RTLs and waits for the landing, all through the UI against the mock drone. About 40 s; needs nothing but the web app. It runs its own dev server on port 5175 with a test-only *Drone 1* that starts on the ground (`VITE_MOCK_GROUND_DRONE`) at 5× speed (`VITE_MOCK_TIME_SCALE`), so the dev server on 5173 and the public demo are untouched. Desktop Chrome only until the phone layout exists.
+
 ## 2026-10-10: fault injection panel
 
 - **Simulator section, now with faults**: the menu's Simulator section (whenever the drone is the in-browser mock, the public demo included) can drop the link, add delay, lose telemetry, have the RC pilot take over, force a low battery, raise any failsafe and set the wind, with *Clear all faults*. Every warning the console has can now be seen on demand.

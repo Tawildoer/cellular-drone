@@ -19,6 +19,7 @@ const COMMAND_LABEL: Record<Command['type'], string> = {
   'freefly.remove': 'Remove waypoint',
   'freefly.loiter': 'Loiter',
   'video.config': 'Video settings',
+  'video.source': 'Camera',
 }
 
 /** Each command is a tile, like the top bar's metrics. */

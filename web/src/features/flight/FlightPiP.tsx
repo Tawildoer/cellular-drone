@@ -78,7 +78,7 @@ export function FlightPiP({ mission = null, onMapClick, onMapDoubleClick, onWayp
         />
       </Slot>
       <Slot panel="video" focused={focused} label="Video" onSwap={swapTo} onKeyDown={handleTileKeyDown}>
-        <VideoPanel />
+        <VideoPanel showControls={focused === 'video'} />
       </Slot>
     </div>
   )

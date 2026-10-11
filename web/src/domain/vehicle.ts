@@ -121,6 +121,21 @@ export interface CellularSignal {
   band?: string
 }
 
+/** A camera that can be the live stream (ADR-0018, ADR-0029). CV cameras
+ * stay onboard and never appear here. */
+export interface VideoCamera {
+  id: string
+  /** Short, for the switcher: "Gimbal", "Nose", "Belly". */
+  name: string
+  kind: 'gimbal' | 'aux'
+}
+
+/** The drone's streamable cameras and the one being sent now. */
+export interface VideoStatus {
+  cameras: VideoCamera[]
+  activeCameraId: string
+}
+
 export interface HomePosition {
   lat: number
   lon: number
@@ -155,6 +170,9 @@ export interface VehicleState {
   wind?: WindVector
   /** The modem's signal; absent when the agent can't read it. */
   cellular?: CellularSignal
+  /** Absent when the drone doesn't report its cameras (one stream, no
+   * choice). */
+  video?: VideoStatus
   /** epoch ms */
   updatedAt: number
 }

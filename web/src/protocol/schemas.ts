@@ -109,6 +109,12 @@ export const vehicleStateSchema = z.object({
   freeFly: freeFlyStateSchema.optional(),
   wind: z.object({ speedMps: z.number(), fromDeg: z.number() }).optional(),
   cellular: z.object({ rsrpDbm: z.number(), sinrDb: z.number(), band: z.string().optional() }).optional(),
+  video: z
+    .object({
+      cameras: z.array(z.object({ id: z.string(), name: z.string(), kind: z.enum(['gimbal', 'aux']) })),
+      activeCameraId: z.string(),
+    })
+    .optional(),
   updatedAt: z.number(),
 })
 
@@ -182,6 +188,7 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('mode.rtl') }),
   z.object({ type: z.literal('mode.qland') }),
   z.object({ type: z.literal('video.config'), preset: z.enum(['low', 'medium', 'high']) }),
+  z.object({ type: z.literal('video.source'), cameraId: z.string().min(1) }),
   z.object({ type: z.literal('gimbal.lock'), target: gimbalTargetSchema }),
   z.object({ type: z.literal('gimbal.release') }),
   z.object({ type: z.literal('freefly.start'), altM: z.number() }),

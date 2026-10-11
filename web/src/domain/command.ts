@@ -28,6 +28,10 @@ export type Command =
   | { type: 'mode.rtl' }
   | { type: 'mode.qland' }
   | { type: 'video.config'; preset: VideoPreset }
+  /** Which camera streams down the one live video link (ADR-0029): the
+   * gimbal camera or an aux camera, from the drone's `video.cameras`.
+   * Camera only: allowed under RC override. */
+  | { type: 'video.source'; cameraId: string }
   /** Point the gimbal camera at a spot on the ground and hold it there as the
    * aircraft flies, until the aircraft is more than GIMBAL_LOCK_RANGE_M away
    * (ADR-0023). Camera only: never moves the aircraft. */

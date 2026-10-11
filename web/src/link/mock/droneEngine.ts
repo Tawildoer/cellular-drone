@@ -12,6 +12,7 @@ import type {
   MissionUploadResult,
   VehicleEvent,
   VehicleState,
+  VideoCamera,
   VideoPreset,
 } from '../../domain'
 import {
@@ -101,6 +102,14 @@ const FAILSAFE_KEYS = ['gcs', 'battery', 'geofence', 'rc'] as const
  * control exists; 45° puts its ground point about one height ahead. */
 const MOCK_GIMBAL_PITCH_DEG = -45
 const DEFAULT_HOME: HomePosition = { lat: -37.861, lon: 145.062, altAmslM: 50 }
+/** The mock air unit's streamable cameras (ADR-0018): the gimbal camera,
+ * and two aux cameras, one looking ahead from the nose and one straight
+ * down from the belly. */
+export const MOCK_CAMERAS: VideoCamera[] = [
+  { id: 'gimbal', name: 'Gimbal', kind: 'gimbal' },
+  { id: 'nose', name: 'Nose', kind: 'aux' },
+  { id: 'belly', name: 'Belly', kind: 'aux' },
+]
 
 /**
  * The simulated VTOL state machine: physics (sim.ts) plus command validation
@@ -116,6 +125,7 @@ export class DroneEngine {
   private failsafeFlags: FailsafeFlags = { gcs: false, battery: false, geofence: false, rc: false }
   private lastFlightMode: VehicleState['flightMode'] = 'UNKNOWN'
   private videoPreset: VideoPreset = 'medium'
+  private activeCameraId = MOCK_CAMERAS[0]!.id
   private gimbalLock: GimbalTarget | null = null
   /** Free fly (ADR-0024): its height, and the uploaded mission it replaced
    * on the vehicle, put back when free fly ends. */
@@ -134,6 +144,10 @@ export class DroneEngine {
   connect(vehicleId: string): void {
     this.vehicleId = vehicleId
     this.connectedElapsedS = 0
+  }
+
+  getActiveCamera(): VideoCamera {
+    return MOCK_CAMERAS.find((c) => c.id === this.activeCameraId) ?? MOCK_CAMERAS[0]!
   }
 
   getVideoPreset(): VideoPreset {
@@ -171,6 +185,14 @@ export class DroneEngine {
     if (cmd.type === 'gimbal.release') {
       if (!this.gimbalLock) return { ok: false, reason: 'rejected_by_vehicle', detail: 'not locked' }
       this.gimbalLock = null
+      return { ok: true }
+    }
+    // Camera only, so allowed under RC override, like the gimbal (ADR-0029).
+    if (cmd.type === 'video.source') {
+      if (!MOCK_CAMERAS.some((c) => c.id === cmd.cameraId)) {
+        return { ok: false, reason: 'rejected_by_vehicle', detail: `no camera "${cmd.cameraId}"` }
+      }
+      this.activeCameraId = cmd.cameraId
       return { ok: true }
     }
     if (cmd.type !== 'video.config' && this.fault.rcOverrideActive) {
@@ -398,6 +420,7 @@ export class DroneEngine {
       wind: this.fault.wind.speedMps > 0 ? { speedMps: this.fault.wind.speedMps, fromDeg: this.fault.wind.directionDeg } : undefined,
       // What the agent will read from the LTE modem: towers round home.
       cellular: simulatedCellSignal(this.sim.home, this.sim.position, this.sim.position.altRelM),
+      video: { cameras: MOCK_CAMERAS, activeCameraId: this.activeCameraId },
       updatedAt: Date.now(),
     }
   }

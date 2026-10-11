@@ -293,3 +293,14 @@ Raw ICE detail lives in the agent's JSONL log and the browser console (`[WebRtcL
 **Consequences:**
 - Coverage lives in one browser until the server exists (Phase 1c); it could then be pooled across flights and operators.
 - The cell bands' thresholds (RSRP −90/−100/−110 dBm, SINR 13/5/0 dB) are textbook figures; revisit with Phase 2 data on what the link actually needs.
+
+## ADR-0029: Switching the live camera from the browser (2026-10-10, accepted)
+**Context:** ADR-0018 gives the air unit a gimbal camera plus aux cameras, with only one stream crossing the cellular link at a time. The operator needs to pick which.
+**Decision:**
+- **Telemetry reports the streamable cameras and the one being sent:** `video { cameras: [{ id, name, kind: gimbal | aux }], activeCameraId }`, optional. CV cameras never appear; they don't stream.
+- **A `video.source { cameraId }` command** switches the one WebRTC video track to another camera. It's agent-local (which encoder output feeds the track), not MAVLink, and **camera only**, so it's allowed while the RC pilot has control, like the gimbal lock (ADR-0023).
+- **The console shows a switcher on the video when it's full size**, one button per camera, pending until telemetry reports the new camera, and saying why if refused. The picture-in-picture tile names the camera.
+- The mock has three: Gimbal, Nose and Belly, each with its own test picture and a moment of black on a switch.
+**Consequences:**
+- The agent refuses `video.source` until the cameras exist (Phase 2). Switching should then send a keyframe request on the new source at once, to keep the black short.
+- The track's codec and resolution may change on a switch; the browser handles that within one track, but it's worth checking with the real gimbal camera (H.265 vs H.264, ARCHITECTURE.md).

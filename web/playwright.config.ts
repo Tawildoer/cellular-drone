@@ -1,21 +1,32 @@
 import { defineConfig, devices } from '@playwright/test'
 
+/**
+ * The smoke test against the in-browser mock drone (`npm run e2e`): the
+ * whole operator workflow, no backend. It starts its own dev server on
+ * 5175 with a plain mock drone that starts on the ground (config.ts,
+ * VITE_MOCK_GROUND_DRONE) flying 5× fast, leaving any dev server on 5173
+ * alone. Desktop Chrome only until the phone layout is built.
+ */
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
-  reporter: 'html',
+  timeout: 3 * 60_000,
+  expect: { timeout: 15_000 },
+  reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: 'http://localhost:5173',
-    trace: 'on-first-retry',
+    ...devices['Desktop Chrome'],
+    baseURL: 'http://localhost:5175',
+    trace: 'retain-on-failure',
   },
   webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:5173',
-    reuseExistingServer: !process.env.CI,
+    command: 'npm run dev -- --port 5175 --strictPort',
+    url: 'http://localhost:5175',
+    reuseExistingServer: false,
+    env: {
+      // Process env beats .env.local.
+      VITE_VEHICLE_LINK: 'mock',
+      VITE_MOCK_GROUND_DRONE: 'true',
+      VITE_MOCK_TIME_SCALE: '5',
+    },
   },
-  projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'Mobile Chrome', use: { ...devices['Pixel 7'] } },
-    { name: 'Mobile Safari', use: { ...devices['iPhone 14'] } },
-  ],
 })
