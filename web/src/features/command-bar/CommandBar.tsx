@@ -24,6 +24,8 @@ const COMMAND_LABEL: Record<Command['type'], string> = {
 
 /** Each command is a tile, like the top bar's metrics. */
 const TILE = 'h-8 whitespace-nowrap rounded-lg bg-secondary glass-tile px-3'
+/** Command feedback, floating just above the bar's left end. */
+const FEEDBACK = 'hud-label glass-panel absolute bottom-full left-0 mb-3 max-w-[min(32rem,calc(100vw-2rem))] truncate px-2.5 py-1.5'
 
 /** How long "accepted" stays up after a command goes through. */
 const ACCEPTED_MS = 3_000
@@ -84,7 +86,7 @@ export function CommandBar({ mission }: { mission: Mission | null }) {
   const landedReason = vehicleState.landed ? 'On the ground' : null
 
   return (
-    <div className="flex min-w-0 items-center gap-1.5">
+    <div className="relative flex min-w-0 items-center gap-1.5">
       <Why reason={armReason}>
         <HoldToConfirmButton
           className={TILE}
@@ -148,20 +150,22 @@ export function CommandBar({ mission }: { mission: Mission | null }) {
         </HoldToConfirmButton>
       </Why>
 
+      {/* Above the bar rather than in it: the bar's row is full of
+          buttons, which squeezed a refusal down to nothing. */}
       {feedback?.kind === 'pending' && (
-        <span role="status" className="hud-label flex items-center gap-1">
+        <span role="status" className={`${FEEDBACK} flex items-center gap-1`}>
           <Loader2 size={12} className="animate-spin" aria-hidden />
           Sending {COMMAND_LABEL[feedback.type]}…
         </span>
       )}
       {feedback?.kind === 'accepted' && (
-        <span role="status" className="hud-label flex items-center gap-1" style={{ color: 'var(--status-good)' }}>
+        <span role="status" className={`${FEEDBACK} flex items-center gap-1`} style={{ color: 'var(--status-good)' }}>
           <CheckCircle2 size={12} aria-hidden />
           {COMMAND_LABEL[feedback.type]} accepted
         </span>
       )}
       {feedback?.kind === 'error' && (
-        <span role="alert" className="hud-label min-w-0 truncate" title={feedback.text} style={{ color: 'var(--status-critical)' }}>
+        <span role="alert" className={FEEDBACK} title={feedback.text} style={{ color: 'var(--status-critical)' }}>
           {feedback.text}
         </span>
       )}

@@ -27,6 +27,18 @@ async function viewerSeesMission(browser: Browser, name: string) {
   await viewer.close()
 }
 
+/** On the ground the progress panel (and the mission's name) is hidden, so
+ * a viewer knows the vehicle still holds a mission by the preflight passing:
+ * arming needs one loaded (domain/checklist). */
+async function viewerCanArmWithVehicleMission(browser: Browser) {
+  const viewer = await browser.newContext()
+  const page = await viewer.newPage()
+  await connectToDrone(page)
+  await expect(page.getByRole('button', { name: 'Hold to arm' })).toBeEnabled({ timeout: 30_000 })
+  await expect(page.getByText('Mission loaded')).toBeHidden()
+  await viewer.close()
+}
+
 test('plan, upload, fly, pause, resume, RTL and land', async ({ page, browser }) => {
   restartSitl()
   await seedMission(page)
@@ -81,9 +93,10 @@ test('plan, upload, fly, pause, resume, RTL and land', async ({ page, browser })
     })
   })
 
-  await test.step('after landing, the mission is still on the vehicle and shown', async () => {
-    // ArduPilot keeps a finished mission until it's replaced.
-    await viewerSeesMission(browser, TEST_MISSION.name)
+  await test.step('after landing, the mission is still on the vehicle', async () => {
+    // ArduPilot keeps a finished mission until it's replaced, and a viewer
+    // joining now must not replace it (useFlightMission).
+    await viewerCanArmWithVehicleMission(browser)
   })
 })
 

@@ -201,6 +201,27 @@ describe('vehicleStore adopting the vehicle mission', () => {
     expect(store.getState().missionOnVehicle?.id).toBe('already-flying')
   })
 
+  it('knows whether the vehicle holds a mission only once it has asked', async () => {
+    const link = new LateConnectingLink()
+    const store = createVehicleStore(link)
+    await store.getState().connect('drone-1')
+    expect(store.getState().missionOnVehicleKnown).toBe(false)
+    link.becomeConnected()
+    await waitFor(() => store.getState().missionOnVehicleKnown)
+    expect(store.getState().missionOnVehicle).toBeNull()
+
+    const failing = new LateConnectingLink()
+    failing.downloadMission = () => Promise.reject(new Error('timed out'))
+    const unknown = createVehicleStore(failing)
+    await unknown.getState().connect('drone-1')
+    failing.becomeConnected()
+    await delay(10)
+    expect(unknown.getState().missionOnVehicleKnown).toBe(false)
+
+    await store.getState().disconnect()
+    expect(store.getState().missionOnVehicleKnown).toBe(false)
+  })
+
   it("doesn't overwrite a mission this page uploaded meanwhile", async () => {
     const link = new LateConnectingLink()
     link.onVehicle = flying

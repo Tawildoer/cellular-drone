@@ -54,6 +54,12 @@ export default defineConfig({
     // purpose, so it can run beside this one.)
     port: 5173,
     strictPort: true,
+    // Test output lives under web/ (the SITL agent writes and moves its
+    // flight logs in test-results-sitl/ while a test runs); a change there
+    // reloaded the page mid-flight.
+    watch: {
+      ignored: ['**/test-results*/**', '**/playwright-report*/**', '**/dist*/**'],
+    },
     // The server (../server) on the same origin as the page, as in a deploy,
     // so its SameSite=Strict session cookie goes with every API call and the
     // signalling socket. Unused by mock builds.

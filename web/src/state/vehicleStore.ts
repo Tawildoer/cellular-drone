@@ -34,6 +34,10 @@ export interface VehicleStoreState {
   /** The flight controller's own copy of `missionOnVehicle`, read back after
    * the upload, when the vehicle reports one (ADR-0017). Null when unknown. */
   missionOnVehicleReadback: VehicleMissionItem[] | null
+  /** Whether the vehicle's own mission has been read since the link last
+   * connected: until then, `missionOnVehicle` being empty means "unknown",
+   * not "none". */
+  missionOnVehicleKnown: boolean
   /** The link backing the current connection, or null when disconnected.
    * App-level wiring (e.g. dev tools) reads this; features use the methods. */
   activeLink: VehicleLink | null
@@ -68,6 +72,7 @@ export function createVehicleStore(linkOrResolver: VehicleLink | VehicleLinkReso
     videoStream: null,
     missionOnVehicle: null,
     missionOnVehicleReadback: null,
+    missionOnVehicleKnown: false,
     activeLink: null,
 
     async connect(vehicleId) {
@@ -82,10 +87,20 @@ export function createVehicleStore(linkOrResolver: VehicleLink | VehicleLinkReso
       // requests. If this page uploads a mission meanwhile, that one wins.
       const adoptVehicleMission = async () => {
         const before = get().missionOnVehicle
-        const onVehicle = await current.downloadMission()
-        if (!onVehicle || link !== current || get().missionOnVehicle !== before) return
+        set({ missionOnVehicleKnown: false })
+        let onVehicle: Mission | null
+        try {
+          onVehicle = await current.downloadMission()
+        } catch {
+          return // Still unknown: nothing will be uploaded on its behalf.
+        }
+        if (link !== current) return
+        if (!onVehicle || get().missionOnVehicle !== before) {
+          set({ missionOnVehicleKnown: true })
+          return
+        }
         // A downloaded mission comes without a readback; drop any stale one.
-        set({ missionOnVehicle: onVehicle, missionOnVehicleReadback: null })
+        set({ missionOnVehicle: onVehicle, missionOnVehicleReadback: null, missionOnVehicleKnown: true })
       }
 
       unsubscribers = [
@@ -120,6 +135,7 @@ export function createVehicleStore(linkOrResolver: VehicleLink | VehicleLinkReso
         videoStream: null,
         missionOnVehicle: null,
         missionOnVehicleReadback: null,
+        missionOnVehicleKnown: false,
         activeLink: null,
       })
     },

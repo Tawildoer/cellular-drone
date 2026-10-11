@@ -2,9 +2,17 @@
 
 What each working session delivered, newest first. Commit hashes link to the change on GitHub. Add an entry when work lands; tick the matching boxes in [the plan](PLAN.md) in the same change.
 
+## 2026-10-11: fixes from the SITL runs
+
+- **Connecting no longer overwrites the drone's mission**: with missions shared on the server, any browser connecting to a drone on the ground uploaded the fleet's newest mission over whatever it held (the SITL viewer test caught it). The console now uploads on connect only to a drone that is disarmed, reported on the ground, and holds no mission. (In the air the agent always refused mission changes.) Waiting for "on the ground" also fixes a flaky start: a flight controller just booted reports its landed state as unknown for a moment, the agent refused the upload as "in flight", and the one-off upload never retried, leaving nothing to arm with.
+- **Refused commands say why, visibly**: the reason ("RTL: blocked_rc_override — the RC pilot has control") was squeezed to nothing in the full bottom bar since the bar redesign. It now floats just above the bar.
+- The dev server no longer watches test output, which reloaded the page mid-test when the agent filed away an uploaded flight log.
+- The SITL test's after-landing check looked for the mission's name, which the console has only shown while flying a mission since 2026-10-09; it now checks that a new viewer can arm, i.e. the vehicle still holds the mission.
+- `deploy/` brought up locally (`DOMAIN=localhost`): login, missions, signalling and the cross-site checks all work through Caddy.
+
 ## 2026-10-11: ready to deploy (Phase 1c, part 4)
 
-- **`deploy/`**: a docker-compose for the VPS, with Caddy for TLS in front of the server, serving the console and proxying the API and signalling on one origin. The server has a Dockerfile (non-root, one data volume for the database, signing key and flight logs). `deploy/README.md` covers the first start, registering drones, users, updates and backups. Not yet brought up: no VPS is chosen.
+- **`deploy/`**: a docker-compose for the VPS, with Caddy for TLS in front of the server, serving the console and proxying the API and signalling on one origin. The server has a Dockerfile (non-root, one data volume for the database, signing key and flight logs). `deploy/README.md` covers the first start, registering drones, users, updates and backups. No VPS is chosen yet.
 - `npm run build:server` in `web/` builds the console for the real drone (WebRTC, logins and missions on the server).
 
 ## 2026-10-11: flight logs reach the server (Phase 1c, part 3)
@@ -25,7 +33,7 @@ What each working session delivered, newest first. Commit hashes link to the cha
 - **Real logins** (ADR-0030): the server (now Fastify, SQLite via `node:sqlite`) checks argon2id passwords and keeps you signed in with an `HttpOnly`, `SameSite=Strict` cookie for 12 hours; five wrong passwords lock that account for 15 minutes. The admin comes from `.env` on first start; more users with `npm run cli -- user:add <name>`.
 - **Missions on the server**, shared by everyone signed in. The console uses the server for both whenever it's built for the real drone (`VITE_VEHICLE_LINK=webrtc`); the demo and mock builds are unchanged. A reload with a live session goes straight back in.
 - **Signalling needs a login**: a browser's signalling socket must carry the session cookie, from the server's own origin (Vite proxies `/api` and `/signal` in development).
-- **Safety**: the console now uploads the newest saved mission on connect only to a disarmed drone, since it may be another operator's.
+- **Safety**: the console now uploads the newest saved mission on connect only to a disarmed drone, since it may be another operator's (narrowed further after the SITL runs, below).
 - `e2e:sitl` signs in to the server and saves its mission through the API.
 
 ## 2026-10-10: camera switching
