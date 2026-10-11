@@ -92,7 +92,13 @@ func (l *Log) Agent(what string, fields map[string]any) {
 	l.write(KindAgent, map[string]any{"what": what, "detail": fields}, true)
 }
 
-// Session records a browser session opening or closing.
+// SessionOpened records a browser session starting, with the user the
+// server's signed token named: who did what is on the drone's own record.
+func (l *Log) SessionOpened(sessionID, user, role string) {
+	l.write(KindSession, map[string]any{"session": sessionID, "what": "opened", "user": user, "role": role}, true)
+}
+
+// Session records a browser session closing (or another change).
 func (l *Log) Session(sessionID, what, reason string) {
 	l.write(KindSession, map[string]any{"session": sessionID, "what": what, "reason": reason}, true)
 }

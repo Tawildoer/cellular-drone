@@ -1,21 +1,25 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { decodeSignalling, encodeSignalling, type SignallingMessage } from '@cellular-drone/protocol'
 import type { FastifyInstance } from 'fastify'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { Auth } from './auth.ts'
+import type { Config } from './config.ts'
+import type { Db } from './db.ts'
+import { droneKey } from './drones.ts'
+import { mintSessionToken, verifyVehicleSignature, type SigningKey } from './keys.ts'
 import type { User } from './users.ts'
 
-/** Placeholder until the server signs session tokens: the drone's
- * verification hook accepts it only with -insecure-dev-tokens. */
-const DEV_SESSION_TOKEN = 'unsigned-dev'
 /** Pings keep idle connections alive through NATs, tunnels and proxies, and
  * reveal half-dead sockets (e.g. a modem that dropped without a FIN). */
 const KEEPALIVE_MS = 20_000
+/** A socket that hasn't finished saying who it is by then is dropped. */
+const HANDSHAKE_TIMEOUT_MS = 10_000
 
-/** WebSocket close codes the browser can tell apart. */
+/** WebSocket close codes the browser and the agent can tell apart. */
 export const CLOSE_UNAUTHORIZED = 4401
+export const CLOSE_REPLACED = 4000
 
 interface Operator {
   ws: WebSocket
@@ -24,13 +28,26 @@ interface Operator {
   user: User
 }
 
+/** Where a socket is in saying who it is. */
+type Peer =
+  | { state: 'new' }
+  | { state: 'challenged'; vehicleId: string; nonce: string }
+  | { state: 'vehicle'; vehicleId: string }
+  | { state: 'operator'; operator: Operator }
+
 /**
- * The signalling relay at /signal (ARCHITECTURE.md, session flow): drones
- * hold a WebSocket open, browsers open one per vehicle, and the server
- * passes offers, answers and ICE candidates between them. An operator must
- * be signed in: the session cookie is checked when the socket opens.
+ * The signalling relay at /signal (ARCHITECTURE.md, session flow; ADR-0030):
+ * drones hold a WebSocket open, browsers open one per vehicle, and the server
+ * passes offers, answers and ICE candidates between them.
+ *
+ * - A drone proves its key first: hello → challenge (a random nonce) → auth
+ *   (its Ed25519 signature over it, checked against the registry) → welcome,
+ *   which carries the server's clock.
+ * - An operator must be signed in: the session cookie is checked when the
+ *   socket opens. Each offer it sends goes to the drone with a fresh session
+ *   token signed by the server, naming the user, vehicle and session.
  */
-export function registerSignalling(app: FastifyInstance, auth: Auth): void {
+export function registerSignalling(app: FastifyInstance, auth: Auth, db: Db, signingKey: SigningKey, config: Config): void {
   const log = app.log.child({ component: 'signalling' })
   const vehicles = new Map<string, WebSocket>()
   const operators = new Map<string, Operator>()
@@ -56,6 +73,11 @@ export function registerSignalling(app: FastifyInstance, auth: Auth): void {
 
   const operatorsOf = (vehicleId: string) => [...operators.values()].filter((op) => op.vehicleId === vehicleId)
 
+  function refuse(ws: WebSocket, message: string): void {
+    send(ws, { type: 'error', message })
+    ws.close(CLOSE_UNAUTHORIZED, message)
+  }
+
   function relayFromOperator(op: Operator, message: SignallingMessage): void {
     const vehicle = vehicles.get(op.vehicleId)
     if (!vehicle) {
@@ -63,10 +85,20 @@ export function registerSignalling(app: FastifyInstance, auth: Auth): void {
       return
     }
     switch (message.type) {
-      case 'offer':
+      case 'offer': {
+        const iat = Math.floor(Date.now() / 1000)
+        const sessionToken = mintSessionToken(signingKey.privateKey, {
+          sub: op.user.username,
+          role: op.user.role,
+          vehicleId: op.vehicleId,
+          sessionId: op.sessionId,
+          iat,
+          exp: iat + config.sessionTokenTtlS,
+        })
         log.info({ sessionId: op.sessionId, vehicleId: op.vehicleId, username: op.user.username }, 'offer')
-        send(vehicle, { type: 'offer', sdp: message.sdp, sessionId: op.sessionId, sessionToken: DEV_SESSION_TOKEN })
+        send(vehicle, { type: 'offer', sdp: message.sdp, sessionId: op.sessionId, sessionToken })
         return
+      }
       case 'ice':
         send(vehicle, { type: 'ice', candidate: message.candidate, sessionId: op.sessionId })
         return
@@ -93,11 +125,39 @@ export function registerSignalling(app: FastifyInstance, auth: Auth): void {
     }
   }
 
+  function startOperator(ws: WebSocket, vehicleId: string, asked: string | undefined): Operator | null {
+    const user = userOf.get(ws)
+    if (!user) {
+      refuse(ws, 'not signed in')
+      return null
+    }
+    // A session id can be resumed after a signalling reconnect, but only by
+    // the user it was issued to, and not while it's live.
+    const sessionId =
+      asked && !operators.has(asked) && (sessionOwners.get(asked)?.userId ?? user.id) === user.id ? asked : randomUUID()
+    const operator = { ws, vehicleId, user, sessionId }
+    operators.set(sessionId, operator)
+    sessionOwners.set(sessionId, { userId: user.id, at: Date.now() })
+    send(ws, { type: 'welcome', sessionId })
+    send(ws, { type: 'vehicle.status', vehicleId, online: vehicles.has(vehicleId) })
+    return operator
+  }
+
+  function welcomeVehicle(ws: WebSocket, vehicleId: string): void {
+    // A reconnecting drone (new IP after a modem drop) supersedes its old socket.
+    const previous = vehicles.get(vehicleId)
+    if (previous && previous !== ws) previous.close(CLOSE_REPLACED, 'replaced by a newer connection')
+    vehicles.set(vehicleId, ws)
+    send(ws, { type: 'welcome', serverTime: Date.now() })
+    for (const op of operatorsOf(vehicleId)) send(op.ws, { type: 'vehicle.status', vehicleId, online: true })
+  }
+
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-    let role: 'vehicle' | 'operator' | null = null
-    let vehicleId = ''
-    let operator: Operator | null = null
+    let peer: Peer = { state: 'new' }
     const remote = req.socket.remoteAddress
+    const handshake = setTimeout(() => {
+      if (peer.state === 'new' || peer.state === 'challenged') refuse(ws, 'handshake timed out')
+    }, HANDSHAKE_TIMEOUT_MS)
 
     alive.set(ws, true)
     ws.on('pong', () => alive.set(ws, true))
@@ -105,61 +165,58 @@ export function registerSignalling(app: FastifyInstance, auth: Auth): void {
     ws.on('message', (data) => {
       const message = decodeSignalling(String(data))
       if (!message) {
-        send(ws, { type: 'error', message: 'malformed or unknown signalling message' })
+        send(ws, { type: 'error', message: 'malformed or unknown signalling message (signalling v2?)' })
         return
       }
 
-      if (role === null) {
-        if (message.type !== 'hello') {
-          send(ws, { type: 'error', message: 'send hello first' })
+      switch (peer.state) {
+        case 'new': {
+          if (message.type !== 'hello') return send(ws, { type: 'error', message: 'send hello first' })
+          if (message.role === 'operator') {
+            const operator = startOperator(ws, message.vehicleId, message.sessionId)
+            if (!operator) return
+            peer = { state: 'operator', operator }
+            clearTimeout(handshake)
+            const { sessionId, user } = operator
+            log.info({ role: 'operator', vehicleId: message.vehicleId, sessionId, username: user.username, remote }, 'hello')
+          } else {
+            const nonce = randomBytes(32).toString('base64url')
+            peer = { state: 'challenged', vehicleId: message.vehicleId, nonce }
+            send(ws, { type: 'challenge', nonce })
+          }
           return
         }
-        if (message.role === 'operator') {
-          const user = userOf.get(ws)
-          if (!user) {
-            send(ws, { type: 'error', message: 'not signed in' })
-            ws.close(CLOSE_UNAUTHORIZED, 'not signed in')
-            return
+        case 'challenged': {
+          if (message.type !== 'auth') return refuse(ws, 'expected auth')
+          const key = droneKey(db, peer.vehicleId)
+          if (!key || !verifyVehicleSignature(key, peer.vehicleId, peer.nonce, message.signature)) {
+            log.warn({ vehicleId: peer.vehicleId, remote, registered: Boolean(key) }, 'vehicle_auth_failed')
+            return refuse(ws, key ? 'vehicle signature invalid' : `vehicle ${peer.vehicleId} is not registered`)
           }
-          role = 'operator'
-          vehicleId = message.vehicleId
-          // A session id can be resumed after a signalling reconnect, but
-          // only by the user it was issued to, and not while it's live.
-          const asked = message.sessionId
-          const sessionId =
-            asked && !operators.has(asked) && (sessionOwners.get(asked)?.userId ?? user.id) === user.id ? asked : randomUUID()
-          operator = { ws, vehicleId, user, sessionId }
-          operators.set(operator.sessionId, operator)
-          sessionOwners.set(operator.sessionId, { userId: user.id, at: Date.now() })
-          send(ws, { type: 'welcome', sessionId: operator.sessionId })
-          send(ws, { type: 'vehicle.status', vehicleId, online: vehicles.has(vehicleId) })
-        } else {
-          role = 'vehicle'
-          vehicleId = message.vehicleId
-          // A reconnecting drone (new IP after a modem drop) supersedes its old socket.
-          const previous = vehicles.get(vehicleId)
-          if (previous && previous !== ws) previous.close(4000, 'replaced by a newer connection')
-          vehicles.set(vehicleId, ws)
-          send(ws, { type: 'welcome' })
-          for (const op of operatorsOf(vehicleId)) send(op.ws, { type: 'vehicle.status', vehicleId, online: true })
+          clearTimeout(handshake)
+          peer = { state: 'vehicle', vehicleId: peer.vehicleId }
+          welcomeVehicle(ws, peer.vehicleId)
+          log.info({ role: 'vehicle', vehicleId: peer.vehicleId, remote }, 'hello')
+          return
         }
-        log.info({ role, vehicleId, sessionId: operator?.sessionId, username: operator?.user.username, remote }, 'hello')
-        return
+        case 'vehicle':
+          return relayFromVehicle(ws, peer.vehicleId, message)
+        case 'operator':
+          return relayFromOperator(peer.operator, message)
       }
-
-      if (operator) relayFromOperator(operator, message)
-      else relayFromVehicle(ws, vehicleId, message)
     })
 
     ws.on('close', (code) => {
-      if (role === 'vehicle' && vehicles.get(vehicleId) === ws) {
+      clearTimeout(handshake)
+      if (peer.state === 'vehicle' && vehicles.get(peer.vehicleId) === ws) {
+        const { vehicleId } = peer
         vehicles.delete(vehicleId)
         for (const op of operatorsOf(vehicleId)) send(op.ws, { type: 'vehicle.status', vehicleId, online: false })
       }
       // An operator's peer connection outlives its signalling socket, so the
       // drone isn't told anything here: the connection itself ends the session.
-      if (operator) operators.delete(operator.sessionId)
-      log.info({ role, vehicleId, sessionId: operator?.sessionId, code }, 'closed')
+      if (peer.state === 'operator') operators.delete(peer.operator.sessionId)
+      log.info({ state: peer.state, code }, 'closed')
     })
   })
 

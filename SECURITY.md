@@ -18,17 +18,17 @@ The design assumes the link, the browser and the server can all fail or be attac
 
 ## Status: what isn't built yet
 
-This is a work in progress (see [the status page](docs/status.md)). **Authentication is being built** (Phase 1c, ADR-0030): logins are done, the drone's side isn't yet. Until it is:
+This is a work in progress (see [the status page](docs/status.md)). **Authentication is built** (Phase 1c, ADR-0030) but hasn't faced a deployment yet: it runs locally and in the SITL tests, not yet behind Caddy on a VPS.
 
 | Piece | Today | Planned (Phase 1c / 5) |
 | --- | --- | --- |
 | Browser login | **Done on the server:** argon2id passwords, `HttpOnly` `SameSite=Strict` session cookies, rate limiting, `Origin` checks. (The public demo still has a cosmetic mock login: it has no server and no vehicle.) | TOTP later |
-| Session tokens | Nothing signs them, so **the agent refuses every browser by default**. `-insecure-dev-tokens` makes it accept any non-empty token, for SITL and the bench | Ed25519 tokens signed by the server, verified by the agent before it answers |
-| Drone identity | None | A per-drone key on the agent's signalling connection |
-| Signalling server | Browsers need a session cookie; **drones don't authenticate yet** | Drones prove their key on connect |
+| Session tokens | **Done:** the server signs a short-lived Ed25519 token for every offer (user, vehicle, session, expiry); the agent checks it with the server's public key (`-server-pubkey`) before answering, and records the user in its flight log. Without the key it refuses every browser, unless started with `-insecure-dev-tokens` (bench only) | Per-drone access and one commander at a time |
+| Drone identity | **Done:** each drone has its own Ed25519 key, made on the drone; the server holds only the public half and challenges the drone on every connect | |
+| Signalling server | Browsers need a session cookie from the server's own origin; drones prove their key | TLS through Caddy in the deployment |
 | Agent ↔ flight controller | Plain MAVLink2 on a UART | MAVLink2 signing (Phase 5) |
 
-**So, until Phase 1c lands: don't fly a real aircraft whose signalling server is reachable from the internet**, and never run the agent with `-insecure-dev-tokens` outside SITL or a bench. The public demo at drone.tomwildoer.com is the in-browser mock only: it has no connection to any vehicle.
+**Never run the agent with `-insecure-dev-tokens` outside SITL or a bench**, and keep the server behind TLS (Caddy) when it's reachable from the internet. The public demo at drone.tomwildoer.com is the in-browser mock only: it has no connection to any vehicle.
 
 ## Secrets
 

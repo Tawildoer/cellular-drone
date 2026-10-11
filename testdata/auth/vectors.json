@@ -1,0 +1,24 @@
+{
+  "comment": "Known answers for ADR-0030 signatures, checked by server/src/__tests__/keys.test.ts and agent/internal/auth. Seeds are RFC 8032 test keys: never real keys.",
+  "session": {
+    "serverSeedHex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+    "serverPublicKey": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+    "claims": {
+      "v": 1,
+      "sub": "pilot",
+      "role": "operator",
+      "vehicleId": "drone-1",
+      "sessionId": "6f1c2a9e-3b7d-4e8a-9c1f-2d5b8e7a4c3f",
+      "iat": 1791700000,
+      "exp": 1791700060
+    },
+    "token": "eyJ2IjoxLCJzdWIiOiJwaWxvdCIsInJvbGUiOiJvcGVyYXRvciIsInZlaGljbGVJZCI6ImRyb25lLTEiLCJzZXNzaW9uSWQiOiI2ZjFjMmE5ZS0zYjdkLTRlOGEtOWMxZi0yZDViOGU3YTRjM2YiLCJpYXQiOjE3OTE3MDAwMDAsImV4cCI6MTc5MTcwMDA2MH0.XBsgobepnyZ39r4wvj-JH9JBm2cUjnmvniGT2KaNx2LLQY1VL-xBMpx9WMNz36j5vozQ-ga9FqbSzYQKLgd6BQ"
+  },
+  "vehicleAuth": {
+    "droneSeedHex": "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+    "dronePublicKey": "PUAXw-hDiVqStwqnTRt-vJyYLM8uxJaMwM1V8Sr0Zgw",
+    "vehicleId": "drone-1",
+    "nonce": "q2Hn0x6k3Vd9fJ8mW1sYtRzP4cLbA7eGuNoXiK5vQhE",
+    "signature": "Qaj0IXDw0DGkhbOVaojadwjmHt57_5VAiqGBcBB7igyyDcyLQf24qxh6rAd_YV7IpxYD9eiRF70zqRCMbwB2Aw"
+  }
+}

@@ -65,14 +65,14 @@ Do this before new planner features (ADR-0017). Mapping reference: `docs/MAVLINK
   - [ ] Gimbal lock and release (`DO_SET_ROI_LOCATION` / `ROI_NONE`, release past 500 m), gimbal attitude and `WIND` into telemetry, free fly as a rolling mission (ADR-0023, -0024, -0026)
   - [ ] `battery_rtl.lua`: return home when the battery is down to the trip home plus the reserve, proven in SITL (ADR-0025)
   - [x] Local command and flight log (JSONL): `internal/flightlog`, `-flight-log-dir`; sessions, commands, uploads, FC events, state samples (2026-10-08). Upload to the server is Phase 1c
-  - [ ] WSS client to signalling with a per-drone key; verify the Ed25519 session token before answering an offer
+  - [x] WSS client to signalling with a per-drone key; verify the Ed25519 session token before answering an offer (ADR-0030, 2026-10-11)
 - [ ] Generate JSON Schema from the zod `protocol/` definitions; Go types generated from it or hand-mirrored with tests
 
 ### 1c: Server + real link
 - [x] Move `protocol/` to a shared workspace package (`packages/protocol`) (2026-10-11)
 - [ ] `server/` (TypeScript, Node 24, Fastify):
   - [x] Auth: argon2id, session cookies, rate limiting, admin seeded from env; more users from `npm run cli` (ADR-0030, 2026-10-11)
-  - [ ] Drone registry (per-drone keys) and session-token minting (Ed25519)
+  - [x] Drone registry (per-drone keys) and session-token minting (Ed25519) (ADR-0030, 2026-10-11)
   - [x] Signalling WebSocket relay between the browser and the drone; operators need a session cookie (2026-10-11; drones authenticate in the next step)
   - [x] Missions CRUD, validated against the protocol's `missionSchema` (2026-10-11)
   - [ ] Flight-log upload endpoint, signed with the drone key

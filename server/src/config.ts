@@ -11,6 +11,12 @@ export interface Config {
    * away from localhost; browsers already treat http://localhost as secure. */
   cookieSecure: boolean
   sessionTtlMs: number
+  /** The server's Ed25519 session-signing key (PKCS#8 PEM), created on
+   * first start; '' = a throwaway key per process (tests). */
+  signingKeyFile: string
+  /** How long a signed session token is good for: only long enough to
+   * reach the drone with the offer it rides on. */
+  sessionTokenTtlS: number
   /** Origins allowed to make state-changing requests and open signalling with
    * a session cookie (e.g. https://fly.example.com). Empty = same host only. */
   allowedOrigins: string[]
@@ -41,6 +47,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     adminPassword: env.ADMIN_PASSWORD || undefined,
     cookieSecure: bool(env.COOKIE_SECURE, true),
     sessionTtlMs: Number(env.SESSION_TTL_HOURS ?? 12) * HOUR_MS,
+    signingKeyFile: env.SESSION_SIGNING_KEY_FILE ?? 'data/session-signing.key',
+    sessionTokenTtlS: Number(env.SESSION_TOKEN_TTL_S ?? 60),
     allowedOrigins: list(env.ALLOWED_ORIGINS),
     trustProxy: bool(env.TRUST_PROXY, false),
   }

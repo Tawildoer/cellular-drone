@@ -22,21 +22,46 @@ The binary is static and pure Go: video comes from an encoder subprocess
 (`-video-cmd`) writing Annex-B H.264 to stdout, so no cgo or GStreamer
 headers are needed to build it.
 
-## Run on one machine (prove the basics)
+## Keys (ADR-0030)
+
+The agent has its own Ed25519 key (`-key`, default `drone.key`, created with
+mode 0600 if it doesn't exist). The server must know its public half before
+it lets the drone connect, and the agent must know the server's public key
+before it lets any browser in:
 
 ```bash
-cd server && npm start                         # signalling on :8788
-cd agent && ./bin/agent -insecure-dev-tokens \
+./bin/agent -print-key                                  # the drone's public key
+cd ../server && npm run cli -- drone:add drone-1 <that key>
+npm run cli -- keys:show                                # the server's public key
+./bin/agent -server-pubkey <that key> ...               # every run from now on
+```
+
+On connect the server sends a random challenge and the agent signs it; each
+browser offer then arrives with a session token the server signed, naming the
+user, this vehicle and the session, which the agent checks (signature,
+vehicle, session, expiry by the server's clock) before answering. The flight
+log records the user. Without `-server-pubkey` every browser is refused,
+unless `-insecure-dev-tokens` is given (bench only).
+
+## Run on one machine (prove the basics)
+
+The server set up as in `../server/README.md` (an admin, `drone-1`
+registered), then:
+
+```bash
+cd server && npm start                         # API and signalling on :8788
+cd agent && ./bin/agent -server-pubkey <server key> \
   -video-cmd "ffmpeg -loglevel error -re -f lavfi -i testsrc=size=1280x720:rate=30 -pix_fmt yuv420p -c:v libx264 -profile:v baseline -tune zerolatency -preset ultrafast -b:v 1500k -g 30 -f h264 -"
-cd web && VITE_VEHICLE_LINK=webrtc npm run dev  # then open the app and pick Drone 1
+cd web && VITE_VEHICLE_LINK=webrtc npm run dev  # then sign in and pick Drone 1
 ```
 
 ## Run against ArduPlane SITL
 
 See `../sim/README.md`. In short: `docker compose up -d` in `sim/`, then
 `go run ./cmd/sitlcheck` for a scripted flight with no browser, or
-`go run ./cmd/agent -fc tcp:127.0.0.1:5760 -video-cmd "" -insecure-dev-tokens`
-to fly it from the browser.
+`go run ./cmd/agent -fc tcp:127.0.0.1:5760 -video-cmd "" -server-pubkey <server key>`
+to fly it from the browser (`npm run e2e:sitl` in `web/` sets all of this up
+by itself).
 
 ## Run on the Raspberry Pi 5
 
@@ -45,7 +70,8 @@ is software x264 from GStreamer:
 
 ```bash
 sudo apt install -y gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly stun-client
-./agent-linux-arm64 -signal wss://<signalling host>/signal -iface wlan0 -log agent.jsonl -insecure-dev-tokens
+./agent-linux-arm64 -signal wss://<signalling host>/signal -iface wlan0 -log agent.jsonl \
+  -key /etc/cellular-drone/drone.key -server-pubkey <server key>
 ```
 
 `-iface wlan0` keeps ICE on the real network (VPN interfaces like Tailscale
@@ -64,7 +90,9 @@ reading glass-to-glass latency off the browser.
 | `-iface` | all but VPN/tunnel | restrict ICE to one interface |
 | `-ice-disconnected` / `-ice-failed` / `-ice-keepalive` | 4s / 15s / 1s | tuned for cellular |
 | `-log` | stdout | JSONL debug log (ICE, sessions, MAVLink chatter) |
-| `-insecure-dev-tokens` | off | accept unsigned session tokens. **SITL and bench only**: anyone who can reach the signalling server can command the vehicle. Without it the agent refuses every browser until server auth lands (Phase 1c, `../SECURITY.md`) |
+| `-key` | `drone.key` | the drone's private key, created if missing; `-print-key` prints its public half and exits |
+| `-server-pubkey` | none | the server's session-signing key (`npm run cli -- keys:show`). Without it every browser is refused |
+| `-insecure-dev-tokens` | off | with no `-server-pubkey`, accept unsigned session tokens. **Bench only**: anyone who can reach the signalling server can command the vehicle (`../SECURITY.md`) |
 | `-flight-log-dir` | `flightlogs` | the flight log: one JSONL file per start, empty = off (see below) |
 
 ## Flight log
@@ -74,7 +102,7 @@ The drone's own audit record (ARCHITECTURE.md, command model), apart from the de
 | `kind` | When | Fields |
 | --- | --- | --- |
 | `agent` | start, shutdown | `what`, `detail` |
-| `session` | a browser session opens or closes | `session`, `what`, `reason` |
+| `session` | a browser session opens or closes | `session`, `what`; opening: `user`, `role` (from the server's signed token); closing: `reason` |
 | `command` | every `cmd.request`, accepted or refused | `session`, `requestId`, `command`, `result` |
 | `mission_upload` | every `mission.upload` | `session`, `requestId`, `missionId`, `items`, `result`, `rowsOnVehicle` |
 | `event` | FC mode change, failsafe, RC override, status text | `event` (the `telemetry.event` payload) |

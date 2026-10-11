@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"flag"
 	"fmt"
 	"io"
@@ -20,6 +21,7 @@ import (
 	"github.com/bluenviron/gomavlib/v3"
 	"github.com/pion/webrtc/v4"
 
+	"github.com/tomwildoer/cellular-drone/agent/internal/auth"
 	"github.com/tomwildoer/cellular-drone/agent/internal/fc"
 	"github.com/tomwildoer/cellular-drone/agent/internal/flightlog"
 	"github.com/tomwildoer/cellular-drone/agent/internal/protocol"
@@ -52,7 +54,10 @@ func main() {
 	videoPort := flag.Int("video-port", 5004, "local UDP port the encoder sends RTP to")
 	fcAddr := flag.String("fc", "", "flight controller MAVLink: tcp:HOST:PORT (SITL, e.g. tcp:127.0.0.1:5760) or serial:DEVICE:BAUD (e.g. serial:/dev/ttyS2:921600); empty = link-test mode with no FC")
 	logPath := flag.String("log", "-", "JSONL debug log file (- = stdout)")
-	insecureDevTokens := flag.Bool("insecure-dev-tokens", false, "accept unsigned session tokens: anyone who can reach the signalling server can command the vehicle. SITL and bench only, until server auth (Phase 1c, SECURITY.md)")
+	keyPath := flag.String("key", "drone.key", "the drone's Ed25519 private key (PKCS#8 PEM), created if missing; its public half goes in the server's registry (drone:add)")
+	printKey := flag.Bool("print-key", false, "print the drone's public key (creating the -key file if needed) and exit")
+	serverPubkey := flag.String("server-pubkey", "", "the server's session-signing public key (server: npm run cli -- keys:show); without it every browser is refused")
+	insecureDevTokens := flag.Bool("insecure-dev-tokens", false, "with no -server-pubkey, accept unsigned session tokens: anyone who can reach the signalling server can command the vehicle. SITL and bench only (SECURITY.md)")
 	flightLogDir := flag.String("flight-log-dir", "flightlogs", "directory for the flight log: commands, uploads, FC events and state samples, one JSONL file per start (empty = off)")
 	homeLat := flag.Float64("home-lat", -37.861, "reported home latitude")
 	homeLon := flag.Float64("home-lon", 145.062, "reported home longitude")
@@ -60,6 +65,23 @@ func main() {
 	iceFailed := flag.Duration("ice-failed", 15*time.Second, "ICE failed timeout")
 	iceKeepalive := flag.Duration("ice-keepalive", time.Second, "ICE keepalive interval")
 	flag.Parse()
+
+	droneKey, created, err := auth.LoadOrCreateKey(*keyPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "drone key:", err)
+		os.Exit(1)
+	}
+	if *printKey {
+		fmt.Println(auth.PublicKeyString(droneKey))
+		return
+	}
+	var serverKey ed25519.PublicKey
+	if *serverPubkey != "" {
+		if serverKey, err = auth.ParsePublicKey(*serverPubkey); err != nil {
+			fmt.Fprintln(os.Stderr, "-server-pubkey:", err)
+			os.Exit(1)
+		}
+	}
 
 	var out io.Writer = os.Stdout
 	if *logPath != "-" {
@@ -72,6 +94,12 @@ func main() {
 		out = f
 	}
 	log := slog.New(slog.NewJSONHandler(out, nil)).With("vehicle", *vehicleID)
+	publicKey := auth.PublicKeyString(droneKey)
+	if created {
+		log.Warn("drone_key_created", "path", *keyPath, "public_key", publicKey,
+			"detail", "register it on the server: npm run cli -- drone:add "+*vehicleID+" "+publicKey)
+	}
+	clock := &auth.ServerClock{}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -125,7 +153,7 @@ func main() {
 		vehicle = link
 	}
 
-	manager, err := session.NewManager(session.Config{
+	manager, err = session.NewManager(session.Config{
 		VehicleID:              *vehicleID,
 		Home:                   protocol.HomePosition{Lat: *homeLat, Lon: *homeLon},
 		ICEServers:             iceServers(*stun),
@@ -138,6 +166,8 @@ func main() {
 		TelemetryInterval:      100 * time.Millisecond,
 		FailedGrace:            2 * time.Minute,
 		FlightLog:              flightLog,
+		ServerKey:              serverKey,
+		Clock:                  clock,
 		InsecureDevTokens:      *insecureDevTokens,
 	}, videoSource, vehicle, func(msg protocol.Signalling) { client.Send(msg) }, log)
 	if err != nil {
@@ -145,7 +175,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	client = signalling.NewClient(*signalURL, *vehicleID, func(msg protocol.Signalling) {
+	client = signalling.NewClient(*signalURL, *vehicleID, droneKey, clock, func(msg protocol.Signalling) {
 		switch msg.Type {
 		case "offer":
 			manager.HandleOffer(msg)
@@ -156,13 +186,19 @@ func main() {
 		}
 	}, log)
 
-	log.Info("agent_started", "signal", *signalURL, "video", *videoCmd != "", "iface", *iface, "fc", *fcAddr)
-	if *insecureDevTokens {
+	log.Info("agent_started", "signal", *signalURL, "video", *videoCmd != "", "iface", *iface, "fc", *fcAddr, "public_key", publicKey)
+	switch {
+	case serverKey != nil:
+		log.Info("session_tokens_verified", "server_pubkey", *serverPubkey)
+	case *insecureDevTokens:
 		log.Warn("insecure_dev_tokens", "detail", "accepting unsigned session tokens: anyone who can reach the signalling server can command the vehicle. SITL and bench only.")
-	} else {
-		log.Warn("sessions_refused", "detail", "session tokens can't be verified until server auth lands (Phase 1c), so no browser can connect. Use -insecure-dev-tokens on SITL or a bench.")
+	default:
+		log.Warn("sessions_refused", "detail", "no -server-pubkey, so no session token can be checked and every browser is refused. Pass the server's key (npm run cli -- keys:show), or -insecure-dev-tokens on a bench.")
 	}
-	flightLog.Agent("started", map[string]any{"fc": *fcAddr, "signal": *signalURL, "insecureDevTokens": *insecureDevTokens})
+	flightLog.Agent("started", map[string]any{
+		"fc": *fcAddr, "signal": *signalURL, "publicKey": publicKey,
+		"tokensVerified": serverKey != nil, "insecureDevTokens": *insecureDevTokens && serverKey == nil,
+	})
 	client.Run(ctx)
 	manager.CloseAll("agent shutting down")
 	flightLog.Agent("stopping", nil)

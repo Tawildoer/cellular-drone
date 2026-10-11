@@ -22,6 +22,9 @@ export interface WebRtcLinkOptions {
 const DEFAULT_SIGNAL_URL = 'ws://localhost:8788/signal'
 const DEFAULT_ICE_SERVERS: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }]
 const REQUEST_TIMEOUT_MS = 5000
+/** The server closes signalling with this when the session cookie is missing
+ * or expired (server/src/signalling.ts). */
+const SIGNAL_CLOSE_UNAUTHORIZED = 4401
 const STATS_INTERVAL_MS = 1000
 /** Telemetry older than this marks the link degraded even if ICE says connected. */
 const TELEMETRY_STALE_MS = 1500
@@ -161,10 +164,17 @@ export class WebRtcLink implements VehicleLink {
       const message = decodeSignalling(String(ev.data))
       if (message) void this.handleSignal(message)
     }
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
       if (this.signal !== ws) return
       this.signal = null
       if (!this.wanted) return
+      if (ev.code === SIGNAL_CLOSE_UNAUTHORIZED) {
+        // Signed out (the session expired, or another tab logged out):
+        // retrying can't help until the operator logs in again.
+        console.warn('[WebRtcLink] signalling refused: not signed in')
+        if (!this.pc) this.setStatus({ state: 'disconnected' })
+        return
+      }
       // The peer connection carries on without signalling; this only matters
       // for the next offer or ICE restart.
       this.signalRetryTimer = setTimeout(() => this.openSignalling(), this.signalRetryMs)

@@ -1,15 +1,21 @@
 import { createInterface } from 'node:readline'
 import { loadConfig } from './config.ts'
 import { openDb } from './db.ts'
+import { addDrone, listDrones, removeDrone } from './drones.ts'
+import { loadOrCreateSigningKey } from './keys.ts'
 import { createUser, deleteUser, listUsers, setPassword, type Role } from './users.ts'
 
 /**
- * Account admin from the shell, against the server's database (DB_PATH):
+ * Admin from the shell, against the server's database (DB_PATH) and keys:
  *
  *   npm run cli -- user:add <name> [--admin]
  *   npm run cli -- user:passwd <name>
  *   npm run cli -- user:remove <name>
  *   npm run cli -- user:list
+ *   npm run cli -- drone:add <id> <public key> [--name <name>]   (agent -print-key)
+ *   npm run cli -- drone:remove <id>
+ *   npm run cli -- drone:list
+ *   npm run cli -- keys:show      (the agents' -server-pubkey; creates the key if needed)
  *
  * Passwords are read from the terminal without echo, or from the PASSWORD
  * environment variable for scripts, never from the command line (it would
@@ -40,9 +46,19 @@ async function readPassword(prompt: string): Promise<string> {
   }
 }
 
+const USAGE = `commands:
+  user:add <name> [--admin]   user:passwd <name>   user:remove <name>   user:list
+  drone:add <id> <public key> [--name <name>]   drone:remove <id>   drone:list
+  keys:show`
+
 async function main(argv: string[]): Promise<void> {
   const [command, name, ...flags] = argv
-  const db = openDb(loadConfig().dbPath)
+  const config = loadConfig()
+  if (command === 'keys:show') {
+    console.log(loadOrCreateSigningKey(config.signingKeyFile).publicKey)
+    return
+  }
+  const db = openDb(config.dbPath)
   try {
     switch (command) {
       case 'user:add': {
@@ -65,8 +81,24 @@ async function main(argv: string[]): Promise<void> {
       case 'user:list':
         for (const user of listUsers(db)) console.log(`${user.username}\t${user.role}`)
         return
+      case 'drone:add': {
+        const [publicKey, ...rest] = flags
+        if (!name || !publicKey) throw new Error('usage: drone:add <id> <public key> [--name <name>]')
+        const nameAt = rest.indexOf('--name')
+        const drone = addDrone(db, name, publicKey, nameAt >= 0 ? rest[nameAt + 1] : undefined)
+        console.log(`added drone ${drone.id} (${drone.name})`)
+        return
+      }
+      case 'drone:remove':
+        if (!name) throw new Error('usage: drone:remove <id>')
+        if (!removeDrone(db, name)) throw new Error(`no drone ${name}`)
+        console.log(`removed drone ${name}`)
+        return
+      case 'drone:list':
+        for (const drone of listDrones(db)) console.log(`${drone.id}\t${drone.name}\t${drone.publicKey}`)
+        return
       default:
-        throw new Error('commands: user:add <name> [--admin], user:passwd <name>, user:remove <name>, user:list')
+        throw new Error(USAGE)
     }
   } finally {
     db.close()

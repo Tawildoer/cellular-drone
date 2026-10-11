@@ -1,5 +1,6 @@
 // Package signalling keeps the agent's outbound WebSocket to the signalling
-// server alive: connect, say hello as the vehicle, hand each message to a
+// server alive: connect, say hello as the vehicle, prove the drone's key by
+// signing the server's challenge (ADR-0030), hand each later message to a
 // handler in arrival order, and reconnect with backoff after any drop (a
 // modem reconnect, a new IP). Established peer connections don't depend on
 // it — WebRTC media and data flow directly — so a signalling drop only
@@ -8,6 +9,7 @@ package signalling
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"log/slog"
 	"sync"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/tomwildoer/cellular-drone/agent/internal/auth"
 	"github.com/tomwildoer/cellular-drone/agent/internal/protocol"
 )
 
@@ -31,6 +34,8 @@ type Handler func(protocol.Signalling)
 type Client struct {
 	url       string
 	vehicleID string
+	key       ed25519.PrivateKey
+	clock     *auth.ServerClock
 	handle    Handler
 	log       *slog.Logger
 
@@ -38,8 +43,10 @@ type Client struct {
 	conn *websocket.Conn
 }
 
-func NewClient(url, vehicleID string, handle Handler, log *slog.Logger) *Client {
-	return &Client{url: url, vehicleID: vehicleID, handle: handle, log: log}
+// NewClient signs the server's challenges with key, and sets clock from the
+// server's welcome.
+func NewClient(url, vehicleID string, key ed25519.PrivateKey, clock *auth.ServerClock, handle Handler, log *slog.Logger) *Client {
+	return &Client{url: url, vehicleID: vehicleID, key: key, clock: clock, handle: handle, log: log}
 }
 
 // Send writes one message if connected. Messages sent while disconnected are
@@ -114,7 +121,6 @@ func (c *Client) session(ctx context.Context) error {
 	}()
 
 	c.Send(protocol.Signalling{Type: "hello", Role: "vehicle", VehicleID: c.vehicleID})
-	c.log.Info("signalling_connected", "url", c.url)
 
 	for {
 		_ = conn.SetReadDeadline(time.Now().Add(readTimeout))
@@ -124,9 +130,19 @@ func (c *Client) session(ctx context.Context) error {
 		}
 		var msg protocol.Signalling
 		if err := json.Unmarshal(raw, &msg); err != nil || msg.V != protocol.SignallingVersion {
-			c.log.Warn("signalling_message_invalid")
+			c.log.Warn("signalling_message_invalid", "want_version", protocol.SignallingVersion)
 			continue
 		}
-		c.handle(msg)
+		switch msg.Type {
+		case "challenge":
+			c.Send(protocol.Signalling{Type: "auth", Signature: auth.SignChallenge(c.key, c.vehicleID, msg.Nonce)})
+		case "welcome":
+			if msg.ServerTime != nil {
+				c.clock.Set(*msg.ServerTime)
+			}
+			c.log.Info("signalling_connected", "url", c.url, "server_clock_offset", c.clock.Offset().String())
+		default:
+			c.handle(msg)
+		}
 	}
 }

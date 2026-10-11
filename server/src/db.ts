@@ -32,6 +32,15 @@ const MIGRATIONS: string[] = [
     updated_at INTEGER NOT NULL
   );
   `,
+  `
+  CREATE TABLE drones (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    -- Ed25519, base64url of the raw 32 bytes; the private half stays on the drone.
+    public_key TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  `,
 ]
 
 export type Db = DatabaseSync

@@ -17,7 +17,7 @@ An autonomous fixed-wing **VTOL (ArduPilot ArduPlane QuadPlane)** supervised ove
 
 ## Status
 
-Work in progress: software runs end to end against ArduPlane SITL; no hardware yet. **Authentication is half built** (operators log in; drones don't authenticate yet): read [SECURITY.md](SECURITY.md) before connecting anything real.
+Work in progress: software runs end to end against ArduPlane SITL; no hardware yet. **Authentication is built but not yet deployed**: read [SECURITY.md](SECURITY.md) before connecting anything real.
 
 ## Quick start
 
@@ -25,7 +25,7 @@ Work in progress: software runs end to end against ArduPlane SITL; no hardware y
 npm install                                      # once, at the root: the shared packages/protocol
 cd web && npm install && npm run dev            # console against the mock drone
 cd sim && docker compose up -d                   # ArduPlane SITL (first build ~15 min)
-cd agent && go run ./cmd/agent -fc tcp:127.0.0.1:5760 -video-cmd "" -insecure-dev-tokens
+cd agent && go run ./cmd/agent -fc tcp:127.0.0.1:5760 -video-cmd "" -server-pubkey <key>   # server/README.md
 cd web && npm run e2e:sitl                       # browser → agent → SITL, end to end
 ```
 

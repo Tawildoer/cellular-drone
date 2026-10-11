@@ -2,6 +2,13 @@
 
 What each working session delivered, newest first. Commit hashes link to the change on GitHub. Add an entry when work lands; tick the matching boxes in [the plan](PLAN.md) in the same change.
 
+## 2026-10-11: drone keys and signed session tokens (Phase 1c, part 2)
+
+- **Drones prove who they are** (ADR-0030): the agent makes its own Ed25519 key (`-key`, `-print-key`), the server's registry holds the public half (`npm run cli -- drone:add`), and on connect the drone signs a random challenge before it's let in. Signalling is now v2.
+- **The agent checks who's asking**: every browser offer reaches the drone with a token the server signed, naming the user, the vehicle and the session, good for 60 seconds. The agent checks it with the server's public key (`-server-pubkey`) before answering, judging expiry by the server's clock so a drone that booted with the wrong time still works. The flight log now records the user who opened each session. The stub is gone; `-insecure-dev-tokens` remains for the bench only.
+- Both sides are tested on the same known-answer vectors (`testdata/auth/vectors.json`), and `e2e:sitl` now runs with real keys: a fresh drone key registered on a fresh database, and the agent verifying tokens.
+- If the session expires, the console stops retrying signalling instead of looping.
+
 ## 2026-10-11: server login and missions (Phase 1c, part 1)
 
 - **The protocol is a shared package** (`packages/protocol`, a root npm workspace) used by the web app, the server and mock-agent; `web/src/protocol` re-exports it.

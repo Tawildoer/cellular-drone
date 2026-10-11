@@ -1,2 +1,4 @@
 bin/
 *.jsonl
+# The drone's private key (-key): never commit it.
+*.key

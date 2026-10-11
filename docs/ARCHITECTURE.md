@@ -65,7 +65,7 @@ flowchart LR
 
 ## Session flow
 
-1. The drone boots, brings up LTE, and opens a WSS to the signalling server. It authenticates with a **per-drone key**.
+1. The drone boots, brings up LTE, and opens a WSS to the signalling server. It authenticates with a **per-drone key**: an Ed25519 key made on the drone, whose public half is in the server's registry; the server sends a random challenge and the drone signs it (ADR-0030).
 2. The operator logs in (argon2id password, plus TOTP later). They get a session cookie.
 3. The operator opens the drone page. The server mints a **short-lived signed session token** (Ed25519, carrying the user, role and expiry) and forwards it to the drone with the browser's SDP offer.
 4. The drone **verifies the token itself** before answering. It never accepts a peer the server didn't authorise.

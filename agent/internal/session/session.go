@@ -6,6 +6,7 @@ package session
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v4"
 
+	"github.com/tomwildoer/cellular-drone/agent/internal/auth"
 	"github.com/tomwildoer/cellular-drone/agent/internal/flightlog"
 	"github.com/tomwildoer/cellular-drone/agent/internal/mission"
 	"github.com/tomwildoer/cellular-drone/agent/internal/protocol"
@@ -66,8 +68,13 @@ type Config struct {
 	// FlightLog is the drone's audit record of sessions, commands and
 	// uploads. Nil = not recorded.
 	FlightLog *flightlog.Log
-	// InsecureDevTokens accepts unsigned session tokens: anyone who can reach
-	// the signalling server can command the vehicle. SITL and bench only.
+	// ServerKey checks the session tokens the server signs (-server-pubkey).
+	// Clock is the server's clock, which their expiry is judged by.
+	ServerKey ed25519.PublicKey
+	Clock     interface{ Now() time.Time }
+	// InsecureDevTokens accepts unsigned session tokens when there's no
+	// ServerKey: anyone who can reach the signalling server can command the
+	// vehicle. SITL and bench only.
 	InsecureDevTokens bool
 }
 
@@ -134,32 +141,46 @@ func isTunnelInterface(name string) bool {
 	return false
 }
 
-// errTokensUnverifiable: nothing can verify a session token yet, so without
-// -insecure-dev-tokens every browser is turned away (SECURITY.md).
-var errTokensUnverifiable = errors.New("session tokens can't be verified yet (server signing is Phase 1c): " +
+// errTokensUnverifiable: with no server key there's nothing to check a
+// token against, so without -insecure-dev-tokens every browser is turned
+// away (SECURITY.md).
+var errTokensUnverifiable = errors.New("no -server-pubkey to check session tokens with: " +
 	"refusing every session; -insecure-dev-tokens accepts unsigned ones, for SITL and the bench only")
 
-// verifySessionToken is where the server-signed Ed25519 session token gets
-// checked before answering (ARCHITECTURE.md, session flow step 4). Until the
-// server signs tokens there's nothing to check a token against, so the agent
-// refuses everyone unless it was started with -insecure-dev-tokens, which
-// accepts any non-empty token: fine on a bench or against SITL, never on an
-// aircraft whose signalling server is reachable from the internet.
-func verifySessionToken(token string, insecureDev bool) error {
-	if token == "" {
-		return errors.New("missing session token")
+// unverifiedUser is who the flight log records for a session let in by
+// -insecure-dev-tokens.
+const unverifiedUser = "(unverified: -insecure-dev-tokens)"
+
+// verifySessionToken checks the server-signed session token on an offer
+// before answering (ARCHITECTURE.md, session flow step 4; ADR-0030): signed
+// with the server's key, for this vehicle and this session, and in date by
+// the server's clock. With no server key it refuses everyone unless the
+// agent was started with -insecure-dev-tokens, which accepts any non-empty
+// token: fine on a bench or against SITL, never on an aircraft whose
+// signalling server is reachable from the internet.
+func (m *Manager) verifySessionToken(msg protocol.Signalling) (auth.Claims, error) {
+	if msg.SessionToken == "" {
+		return auth.Claims{}, errors.New("missing session token")
 	}
-	if !insecureDev {
-		return errTokensUnverifiable
+	if m.cfg.ServerKey != nil {
+		now := time.Now()
+		if m.cfg.Clock != nil {
+			now = m.cfg.Clock.Now()
+		}
+		return auth.VerifySessionToken(m.cfg.ServerKey, msg.SessionToken, m.cfg.VehicleID, msg.SessionID, now)
 	}
-	return nil
+	if m.cfg.InsecureDevTokens {
+		return auth.Claims{Sub: unverifiedUser}, nil
+	}
+	return auth.Claims{}, errTokensUnverifiable
 }
 
 // HandleOffer answers a new session's offer, or a renegotiation (ICE
 // restart) of an existing one.
 func (m *Manager) HandleOffer(msg protocol.Signalling) {
 	log := m.log.With("session", msg.SessionID)
-	if err := verifySessionToken(msg.SessionToken, m.cfg.InsecureDevTokens); err != nil {
+	claims, err := m.verifySessionToken(msg)
+	if err != nil {
 		log.Warn("offer_rejected", "error", err.Error())
 		return
 	}
@@ -169,13 +190,16 @@ func (m *Manager) HandleOffer(msg protocol.Signalling) {
 	m.mu.Unlock()
 
 	if s == nil {
-		var err error
-		if s, err = m.newSession(msg.SessionID); err != nil {
+		if s, err = m.newSession(msg.SessionID, claims.Sub); err != nil {
 			log.Error("session_create_failed", "error", err.Error())
 			return
 		}
-		log.Info("session_created")
-		m.cfg.FlightLog.Session(msg.SessionID, "opened", "")
+		log.Info("session_created", "user", claims.Sub, "role", claims.Role)
+		m.cfg.FlightLog.SessionOpened(msg.SessionID, claims.Sub, claims.Role)
+	} else if s.user != claims.Sub {
+		// The server only resumes a session for its own user; refuse anyway.
+		log.Warn("offer_rejected", "error", "renegotiation from another user", "user", claims.Sub, "session_user", s.user)
+		return
 	} else {
 		log.Info("renegotiation_offer")
 	}
@@ -253,10 +277,12 @@ func (m *Manager) CloseAll(reason string) {
 }
 
 type Session struct {
-	id  string
-	m   *Manager
-	pc  *webrtc.PeerConnection
-	log *slog.Logger
+	id string
+	// user is who the server's token named when the session opened.
+	user string
+	m    *Manager
+	pc   *webrtc.PeerConnection
+	log  *slog.Logger
 
 	stop      chan struct{}
 	closeOnce sync.Once
@@ -277,12 +303,12 @@ func (s *Session) sendControl(raw []byte) {
 	}
 }
 
-func (m *Manager) newSession(id string) (*Session, error) {
+func (m *Manager) newSession(id, user string) (*Session, error) {
 	pc, err := m.api.NewPeerConnection(webrtc.Configuration{ICEServers: m.cfg.ICEServers})
 	if err != nil {
 		return nil, err
 	}
-	s := &Session{id: id, m: m, pc: pc, log: m.log.With("session", id), stop: make(chan struct{})}
+	s := &Session{id: id, user: user, m: m, pc: pc, log: m.log.With("session", id, "user", user), stop: make(chan struct{})}
 
 	if m.video != nil {
 		sender, err := pc.AddTrack(m.video.Track)

@@ -10,8 +10,12 @@ import { z } from 'zod'
  * vehicle connection can serve several browser sessions. A session outlives
  * its signalling socket: the peer connection, not signalling, decides when it
  * ends. The agent/ (Go) mirrors these shapes by hand — change both together.
+ *
+ * v2 (ADR-0030): a drone proves its key before it's welcomed (hello →
+ * challenge → auth → welcome), an operator's socket must carry a session
+ * cookie, and offers carry a server-signed session token (auth.ts).
  */
-export const SIGNALLING_VERSION = 1 as const
+export const SIGNALLING_VERSION = 2 as const
 
 const iceCandidateSchema = z.object({
   candidate: z.string(),
@@ -32,15 +36,27 @@ export const signallingMessageSchema = z.discriminatedUnion('type', [
      * later ICE restart still reaches the drone's existing peer connection. */
     sessionId: z.string().optional(),
   }),
-  z.object({ ...base, type: z.literal('welcome'), sessionId: z.string().optional() }),
+  /** To a drone after its hello: sign this (auth.ts, vehicleAuthMessage). */
+  z.object({ ...base, type: z.literal('challenge'), nonce: z.string() }),
+  /** The drone's Ed25519 signature over the challenge, base64url. */
+  z.object({ ...base, type: z.literal('auth'), signature: z.string() }),
+  z.object({
+    ...base,
+    type: z.literal('welcome'),
+    sessionId: z.string().optional(),
+    /** To a drone: the server's clock (ms since the epoch), which session
+     * token expiry is judged by, so a drone whose clock is wrong at boot
+     * (no RTC, no NTP yet over LTE) still accepts fresh tokens. */
+    serverTime: z.number().optional(),
+  }),
   z.object({ ...base, type: z.literal('vehicle.status'), vehicleId: z.string(), online: z.boolean() }),
   z.object({
     ...base,
     type: z.literal('offer'),
     sdp: z.string(),
     sessionId: z.string().optional(),
-    /** Short-lived token the drone verifies before answering (ARCHITECTURE.md
-     * session flow). Unsigned placeholder until server auth exists. */
+    /** Server to drone only: the short-lived signed token the drone
+     * verifies before answering (auth.ts; ARCHITECTURE.md session flow). */
     sessionToken: z.string().optional(),
   }),
   z.object({ ...base, type: z.literal('answer'), sdp: z.string(), sessionId: z.string().optional() }),

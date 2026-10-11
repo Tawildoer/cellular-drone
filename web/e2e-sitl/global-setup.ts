@@ -1,5 +1,5 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
-import { createWriteStream, mkdirSync } from 'node:fs'
+import { createWriteStream, mkdirSync, mkdtempSync } from 'node:fs'
 import { createConnection } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -39,7 +39,9 @@ function start(name: string, command: string, args: string[], cwd: string, env: 
 }
 
 /** Builds the Go tools, makes sure the SITL image exists, then starts the
- * signalling server and the agent (pointed at SITL). Returns the teardown. */
+ * server and the agent (pointed at SITL) with real keys (ADR-0030): a fresh
+ * drone key registered on a fresh database, and the agent checking session
+ * tokens with the server's key. Returns the teardown. */
 export default async function globalSetup() {
   mkdirSync(BIN_DIR, { recursive: true })
   mkdirSync(LOG_DIR, { recursive: true })
@@ -53,19 +55,34 @@ export default async function globalSetup() {
   execFileSync('docker', ['compose', 'up', '-d', '--build'], { cwd: path.join(REPO, 'sim'), stdio: 'inherit' })
   await waitForPort(5760, 60_000)
 
-  // tsx directly rather than `npm start`: killing npm leaves its tsx child running.
-  const serverDir = path.join(REPO, 'server')
-  const server = start('server', path.join(serverDir, 'node_modules', '.bin', 'tsx'), ['src/index.ts'], serverDir, {
-    DB_PATH: ':memory:',
+  // Keys and database for this run only.
+  const dataDir = mkdtempSync(path.join(tmpdir(), 'cellular-drone-e2e-sitl-data-'))
+  const droneKey = path.join(dataDir, 'drone.key')
+  const serverEnv = {
+    DB_PATH: path.join(dataDir, 'server.db'),
+    SESSION_SIGNING_KEY_FILE: path.join(dataDir, 'session-signing.key'),
     ADMIN_USERNAME: E2E_USER.username,
     ADMIN_PASSWORD: E2E_USER.password,
     COOKIE_SECURE: 'false',
-  })
+  }
+  const serverDir = path.join(REPO, 'server')
+  const tsx = path.join(serverDir, 'node_modules', '.bin', 'tsx')
+  const cli = (...args: string[]) =>
+    execFileSync(tsx, ['src/cli.ts', ...args], { cwd: serverDir, env: { ...process.env, ...serverEnv }, encoding: 'utf8' }).trim()
+  const dronePublicKey = execFileSync(path.join(BIN_DIR, 'agent'), ['-key', droneKey, '-print-key'], { encoding: 'utf8' }).trim()
+  cli('drone:add', 'drone-1', dronePublicKey)
+  const serverPublicKey = cli('keys:show')
+
+  // tsx directly rather than `npm start`: killing npm leaves its tsx child running.
+  const server = start('server', tsx, ['src/index.ts'], serverDir, serverEnv)
   await waitForPort(8788, 30_000)
   const agent = start(
     'agent',
     path.join(BIN_DIR, 'agent'),
-    ['-fc', 'tcp:127.0.0.1:5760', '-video-cmd', '', '-stun', '', '-vehicle', 'drone-1', '-flight-log-dir', LOG_DIR, '-insecure-dev-tokens'],
+    [
+      '-fc', 'tcp:127.0.0.1:5760', '-video-cmd', '', '-stun', '', '-vehicle', 'drone-1', '-flight-log-dir', LOG_DIR,
+      '-key', droneKey, '-server-pubkey', serverPublicKey,
+    ],
     agentDir,
   )
 
