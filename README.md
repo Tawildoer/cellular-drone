@@ -22,6 +22,7 @@ Work in progress: software runs end to end against ArduPlane SITL; no hardware y
 ## Quick start
 
 ```bash
+npm install                                      # once, at the root: the shared packages/protocol
 cd web && npm install && npm run dev            # console against the mock drone
 cd sim && docker compose up -d                   # ArduPlane SITL (first build ~15 min)
 cd agent && go run ./cmd/agent -fc tcp:127.0.0.1:5760 -video-cmd "" -insecure-dev-tokens

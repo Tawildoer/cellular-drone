@@ -1,4 +1,4 @@
-// Package protocol mirrors, by hand, the parts of web/src/protocol the agent
+// Package protocol mirrors, by hand, the parts of packages/protocol the agent
 // speaks: the v1 data-channel envelope (messages.ts), the VehicleState and
 // CommandResult shapes (schemas.ts), and the signalling messages
 // (signalling.ts). The browser drops anything that fails its zod schema, so

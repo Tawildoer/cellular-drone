@@ -2,7 +2,7 @@ package protocol
 
 import "github.com/pion/webrtc/v4"
 
-// SignallingVersion matches SIGNALLING_VERSION in web/src/protocol/signalling.ts.
+// SignallingVersion matches SIGNALLING_VERSION in packages/protocol/src/signalling.ts.
 const SignallingVersion = 1
 
 // Signalling is the union of signalling messages as one flat struct: Type

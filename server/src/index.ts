@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
-import { decodeSignalling, encodeSignalling, type SignallingMessage } from '../../web/src/protocol/signalling.ts'
+import { decodeSignalling, encodeSignalling, type SignallingMessage } from '@cellular-drone/protocol'
 
 const PORT = Number(process.env.PORT ?? 8788)
 const HOST = process.env.HOST ?? '0.0.0.0'

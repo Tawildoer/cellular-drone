@@ -69,7 +69,7 @@ Do this before new planner features (ADR-0017). Mapping reference: `docs/MAVLINK
 - [ ] Generate JSON Schema from the zod `protocol/` definitions; Go types generated from it or hand-mirrored with tests
 
 ### 1c: Server + real link
-- [ ] Move `protocol/` to a shared workspace package (`packages/protocol`)
+- [x] Move `protocol/` to a shared workspace package (`packages/protocol`) (2026-10-11)
 - [ ] `server/` (TypeScript, Node 24, Fastify):
   - [ ] Auth: argon2id, session cookies, rate limiting, admin seeded from env
   - [ ] Drone registry (per-drone keys) and session-token minting (Ed25519)

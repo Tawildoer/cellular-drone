@@ -20,6 +20,7 @@ A fixed-wing **VTOL (ArduPlane QuadPlane)** that flies **autonomous missions onl
 - QuadroFleet / OpenIPC 4G was the original inspiration and is no longer a dependency (ADR-0005). An OpenIPC port of the agent is a possible later optimisation.
 
 ## Repo layout
+- `packages/protocol`: the shared wire contract, a root npm workspace (`npm install` at the root) linked into `web/`, `server/` and `mock-agent/` with `file:` dependencies.
 - `sim/`: ArduPlane SITL (Docker)
 - `agent/`: drone agent (Go). Runs on a laptop against SITL, or on the Orange Pi 5 (Pi 5 stand-in for link work, ADR-0014).
 - `mock-agent/`: dev-only standalone Node process standing in for `agent/` (ADR-0012) — runs the same simulated-VTOL engine as `MockLink`, behind a WebSocket, so the drone's state survives browser reloads. Not the real agent.
@@ -30,7 +31,7 @@ A fixed-wing **VTOL (ArduPlane QuadPlane)** that flies **autonomous missions onl
 ## Conventions
 - **Don't run verification (`npm run build`/`lint`/`test`, Playwright/live-browser checks) after a change without the user's confirmation first.** Ask before running it, don't just run it automatically.
 - **Frontend is built first against `MockLink` (ADR-0009).** UI code (`features/`, `state/`) depends only on `domain/` types and the `VehicleLink` / `AuthClient` / `MissionRepository` interfaces. It never imports a concrete link, WebRTC, MAVLink or server details. Only `app/` wires up implementations. Every link implementation must pass the shared contract tests.
-- `protocol/` (zod, versioned envelope) is the single wire contract between the web app, the server and the agent. Change it deliberately and bump `v` on breaking changes.
+- `packages/protocol` (zod, versioned envelope; the web app reaches it as `web/src/protocol`) is the single wire contract between the web app, the server and the agent. Change it deliberately and bump `v` on breaking changes.
 - Develop and test everything against SITL before hardware.
 - **ArduPilot and MAVLink are the reference for mission planning (ADR-0017).** Before adding or changing a mission item, command, telemetry field or planner behaviour, check `docs/MAVLINK.md` and add or update its row: which ArduPlane command or mode does it, or how we get it if there's none, and what happens if the companion computer dies. Don't build mission features ArduPlane can't fly on its own without an ADR. Where `MockLink` and ArduPlane SITL disagree, SITL is right; fix the mock.
 - Arm, start and mode changes need explicit UI confirmation and are audit-logged on the drone.

@@ -1,6 +1,6 @@
 import { WebSocketServer, type WebSocket } from 'ws'
 import { DroneEngine } from '../../web/src/link/mock/droneEngine.ts'
-import { createMessage, decodeMessage, encodeMessage } from '../../web/src/protocol/index.ts'
+import { createMessage, decodeMessage, encodeMessage } from '@cellular-drone/protocol'
 import type { HomePosition } from '../../web/src/domain/index.ts'
 
 const PORT = Number(process.env.PORT ?? 8787)

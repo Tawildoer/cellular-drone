@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { homePositionSchema, missionSchema } from '../../protocol/schemas'
+import { homePositionSchema, missionSchema } from '../../protocol'
 import { translateMission } from '../translate'
 
 // Shared with the agent's Go translator (testdata/mission-translation/README.md).

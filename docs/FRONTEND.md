@@ -9,7 +9,7 @@ The UI knows nothing about WebRTC, MAVLink, WireGuard or the server topology. It
 ```
 web/src/
   domain/        Pure TS types + logic in OUR vocabulary (no MAVLink, no transport)
-  protocol/      Versioned JSON message schemas (zod) = the wire contract
+  protocol/      Re-exports packages/protocol: versioned JSON message schemas (zod) = the wire contract
   link/          VehicleLink interface + implementations (mock, webrtc, ws…)
   services/      AuthClient, MissionRepository, MissionTranslator, TerrainService interfaces + implementations
   state/         App stores (e.g. Zustand) fed by a VehicleLink
@@ -69,7 +69,7 @@ All real links use **the same `protocol/` messages**, so swapping transports tou
 - JSON messages with **zod** schemas, and a top-level `{ v: 1, type, id?, ts, payload }` envelope.
 - Types: `telemetry.state`, `telemetry.event`, `cmd.request`, `cmd.result`, `mission.upload`, `mission.uploaded`, `mission.download`, `mission.current`, `video.config`, `ping`/`pong`.
 - Every incoming message is validated. Unknown types are ignored (forward compatible).
-- Later this moves to a shared package (`packages/protocol`) used by the web app and the server. The Go agent mirrors it (generated from JSON Schema exported from zod).
+- It lives in the shared package `packages/protocol` (`@cellular-drone/protocol`, a root npm workspace), used by the web app, the server and mock-agent; `web/src/protocol` re-exports it, so the app imports it from there. The Go agent mirrors it by hand (generated from JSON Schema exported from zod is a later step).
 - MockLink also speaks the protocol internally (serialise, validate, deserialise), so the contract gets exercised from day one.
 
 ## 4. Services

@@ -9,6 +9,7 @@
     "start": "tsx src/index.ts"
   },
   "dependencies": {
+    "@cellular-drone/protocol": "file:../packages/protocol",
     "ws": "^8.18.0"
   },
   "devDependencies": {

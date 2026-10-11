@@ -1,0 +1,13 @@
+{
+  "name": "@cellular-drone/protocol",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The one wire contract (zod, versioned envelopes) between the web app, the server, mock-agent and, mirrored by hand, the Go agent. Shipped as TypeScript source: each consumer's bundler or tsx compiles it.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.5"
+  }
+}

@@ -7,7 +7,7 @@ describe('mock cameras (ADR-0029)', () => {
     expect(engine.buildVehicleState().video).toEqual({ cameras: MOCK_CAMERAS, activeCameraId: 'gimbal' })
   })
 
-  it('switches to a camera it has, and refuses one it hasn't', () => {
+  it("switches to a camera it has, and refuses one it hasn't", () => {
     const engine = new DroneEngine()
     expect(engine.applyCommand({ type: 'video.source', cameraId: 'belly' })).toEqual({ ok: true })
     expect(engine.buildVehicleState().video?.activeCameraId).toBe('belly')

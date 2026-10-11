@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Command, CommandResult, Mission, VehicleEvent } from '../../domain'
-import { decodeMessage, encodeMessage } from '../codec'
-import { createMessage, messageSchema, type Message } from '../messages'
+import { createMessage, decodeMessage, encodeMessage, messageSchema, type Message } from '..'
 
 const vehicleState: Message['payload'] = {
   vehicleId: 'drone-1',
@@ -105,7 +104,7 @@ describe('cameras (ADR-0029)', () => {
       ...(vehicleState as object),
       video: { cameras: [{ id: 'gimbal', name: 'Gimbal', kind: 'gimbal' }, { id: 'nose', name: 'Nose', kind: 'aux' }], activeCameraId: 'nose' },
     }
-    const state = decodeMessage(encodeMessage(createMessage('telemetry.state', withVideo as Message['payload'])))
+    const state = decodeMessage(encodeMessage(createMessage('telemetry.state', withVideo as Extract<Message, { type: 'telemetry.state' }>['payload'])))
     expect(state?.payload).toEqual(withVideo)
     const cmd = decodeMessage(encodeMessage(createMessage('cmd.request', { type: 'video.source', cameraId: 'nose' })))
     expect(cmd?.payload).toEqual({ type: 'video.source', cameraId: 'nose' })

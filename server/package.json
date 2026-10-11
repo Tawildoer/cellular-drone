@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@cellular-drone/protocol": "file:../packages/protocol",
     "ws": "^8.18.0"
   },
   "devDependencies": {

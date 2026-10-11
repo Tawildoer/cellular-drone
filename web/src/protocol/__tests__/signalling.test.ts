@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decodeSignalling, encodeSignalling } from '../signalling'
+import { decodeSignalling, encodeSignalling } from '..'
 
 describe('signalling codec', () => {
   it('round-trips an offer and stamps the version', () => {

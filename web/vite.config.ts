@@ -15,7 +15,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
  * left the drone and its decoder out of step with the UI (commands rejected
  * as malformed). Editing one reloads the page instead.
  */
-const LIVE_LINK_CODE = /[\\/]src[\\/](protocol|link|domain|ardupilot)[\\/]/
+const LIVE_LINK_CODE = /[\\/](src[\\/](protocol|link|domain|ardupilot)|packages[\\/]protocol)[\\/]/
 
 function reloadOnLinkCodeChange(): Plugin {
   return {
@@ -46,8 +46,9 @@ export default defineConfig({
     strictPort: true,
     fs: {
       // The repo-level golden files (testdata/mission-translation) are shared
-      // with the Go agent, so the translator tests read them from outside web/.
-      allow: [__dirname, path.resolve(__dirname, '../testdata')],
+      // with the Go agent, so the translator tests read them from outside web/;
+      // the protocol package is linked in from packages/ as source.
+      allow: [__dirname, path.resolve(__dirname, '../testdata'), path.resolve(__dirname, '../packages/protocol')],
     },
   },
   optimizeDeps: {

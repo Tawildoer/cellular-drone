@@ -46,7 +46,7 @@ const (
 	maxLoiterTurnsRadiusM = 2550
 )
 
-// Mission mirrors missionSchema in web/src/protocol/schemas.ts.
+// Mission mirrors missionSchema in packages/protocol/src/schemas.ts.
 type Mission struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
