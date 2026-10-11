@@ -43,8 +43,8 @@ The software is ahead of the hardware, as planned. **Phase 1 runs end to end aga
 <span class="chip next">next</span> **Finish 1b**
 :   Tune the mock to SITL (25 m/s cruise, waypoint-reached and RTL-altitude behaviour). More SITL scenarios: browser closed mid-mission, agent killed mid-flight, mission changed from another ground station. The slow check that a pilot's LOITER isn't time-limited (ADR-0020). Video test pattern in SITL mode. Go protocol types held to the zod schemas by tests.
 
-<span class="chip next">next</span> **Phase 1c: the real server** (ADR-0030; logins, missions, drone keys, signed session tokens and flight-log upload done)
-:   Still to build: docker-compose with Caddy, deploying to the VPS. That unlocks the Phase 1 exit test: a phone on mobile data, through the VPS, flying SITL.
+<span class="chip next">next</span> **Phase 1c: the real server** (ADR-0030; logins, missions, drone keys, signed session tokens, flight-log upload and the deployment bundle done)
+:   Still to do: choose a VPS and bring `deploy/` up on it. That unlocks the Phase 1 exit test: a phone on mobile data, through the VPS, flying SITL.
 
 <span class="chip next">next</span> **1a loose ends**
 :   A deliberate Chrome laptop check. (Done: the fault-injection panel, the menu's Simulator section, and the Playwright smoke test against the mock, `npm run e2e`.) Phone layout stays deferred.
@@ -63,4 +63,4 @@ The software is ahead of the hardware, as planned. **Phase 1 runs end to end aga
 - **Gimbal lock, free fly and the battery return run in the mock only**: the agent rejects their commands, and the battery-return Lua script is still to write and prove in SITL.
 - **Follow terrain is done by the planner**, between waypoints only; ArduPlane's own terrain following (which also covers RTL) is a later ADR.
 - **The mock still flies differently from ArduPlane** in places (cruise speed, waypoint radius, RTL altitude): listed in [the MAVLink mapping](MAVLINK.md#mock-vs-arduplane).
-- **Authentication isn't deployed yet** (Phase 1c): logins, drone keys and signed session tokens work locally and in the SITL tests, but not yet behind Caddy on a VPS. The vehicle list is still fixed in the web app rather than read from the server's registry, and an expired session doesn't send the console back to the login screen. See `SECURITY.md` in the repository root.
+- **Authentication isn't deployed yet** (Phase 1c): logins, drone keys and signed session tokens work locally and in the SITL tests; `deploy/` is written but hasn't run on a VPS (or in Docker at all yet). The vehicle list is still fixed in the web app rather than read from the server's registry, and an expired session doesn't send the console back to the login screen. See `SECURITY.md` in the repository root.

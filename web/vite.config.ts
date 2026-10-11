@@ -33,9 +33,16 @@ const SERVER_URL = process.env.SERVER_URL ?? 'http://localhost:8788'
 
 // https://vite.dev/config/
 export default defineConfig({
-  // cloudflare() builds the Worker deploy config, but conflicts with Vitest's
-  // own server (shared config via vitest/config), so it's excluded under test.
-  plugins: [react(), tailwindcss(), reloadOnLinkCodeChange(), ...(process.env.VITEST ? [] : [cloudflare()])],
+  // cloudflare() builds the Worker deploy config (the public demo), but
+  // conflicts with Vitest's own server (shared config via vitest/config), so
+  // it's excluded under test, and from the build Caddy serves for the server
+  // (npm run build:server), which isn't a Worker.
+  plugins: [
+    react(),
+    tailwindcss(),
+    reloadOnLinkCodeChange(),
+    ...(process.env.VITEST || process.env.VITE_BACKEND === 'server' ? [] : [cloudflare()]),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

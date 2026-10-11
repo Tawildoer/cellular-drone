@@ -2,6 +2,11 @@
 
 What each working session delivered, newest first. Commit hashes link to the change on GitHub. Add an entry when work lands; tick the matching boxes in [the plan](PLAN.md) in the same change.
 
+## 2026-10-11: ready to deploy (Phase 1c, part 4)
+
+- **`deploy/`**: a docker-compose for the VPS, with Caddy for TLS in front of the server, serving the console and proxying the API and signalling on one origin. The server has a Dockerfile (non-root, one data volume for the database, signing key and flight logs). `deploy/README.md` covers the first start, registering drones, users, updates and backups. Not yet brought up: no VPS is chosen.
+- `npm run build:server` in `web/` builds the console for the real drone (WebRTC, logins and missions on the server).
+
 ## 2026-10-11: flight logs reach the server (Phase 1c, part 3)
 
 - **The flight record survives the drone**: the agent uploads each finished flight log to the server every 5 minutes, signed with its own key, and keeps its copy (moved into `uploaded/`). The log being written waits for the next start. Uploads wait out a dead link; a log the server already holds is a harmless retry.

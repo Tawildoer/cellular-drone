@@ -76,7 +76,7 @@ Do this before new planner features (ADR-0017). Mapping reference: `docs/MAVLINK
   - [x] Signalling WebSocket relay between the browser and the drone; operators need a session cookie (2026-10-11; drones authenticate in the next step)
   - [x] Missions CRUD, validated against the protocol's `missionSchema` (2026-10-11)
   - [x] Flight-log upload endpoint, signed with the drone key; users list and download them (2026-10-11)
-  - [ ] `docker-compose.yml`: server, Caddy, coturn (with time-limited TURN credentials)
+  - [~] `docker-compose.yml`: server, Caddy, coturn (with time-limited TURN credentials). `deploy/`: server image and Caddy written (2026-10-11), not yet brought up; coturn on hold (ADR-0015)
 - [x] `web/`: `WebRtcLink`, `HttpAuthClient`, `HttpMissionRepository`. All pass the same contract tests. Switch with `VITE_VEHICLE_LINK=webrtc` (`VITE_BACKEND` picks the server or local storage; 2026-10-11)
 - [ ] Test end to end in SITL: log in from a phone on mobile data → plan → upload → arm → fly → pause/resume → RTL → land.
 - [ ] Test forced-TURN mode (`iceTransportPolicy: "relay"`), and kill the agent mid-flight to check the SITL failsafe.

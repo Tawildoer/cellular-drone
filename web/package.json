@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:server": "tsc -b && VITE_VEHICLE_LINK=webrtc VITE_BACKEND=server VITE_SIGNAL_URL= vite build --outDir dist-server",
     "lint": "eslint .",
     "preview": "npm run build && wrangler dev",
     "test": "vitest run",

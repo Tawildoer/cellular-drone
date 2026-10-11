@@ -1,0 +1,14 @@
+# Only package.json files, packages/ and server/ go into the server image.
+**/node_modules
+**/.env
+**/data
+.git
+agent
+desktop
+docs
+mock-agent
+sim
+site
+testdata
+web
+deploy

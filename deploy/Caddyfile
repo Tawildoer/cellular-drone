@@ -1,0 +1,29 @@
+# TLS, the web console and the server on one origin, which the server's
+# SameSite=Strict session cookie and Origin checks rely on (ADR-0030).
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		-Server
+	}
+
+	# The API and the signalling WebSocket (Caddy proxies upgrades as is).
+	@server path /api/* /signal /healthz
+	handle @server {
+		reverse_proxy server:8788
+	}
+
+	# The console: hashed assets cached for good, index.html never.
+	handle {
+		root * /srv
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		header /index.html Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}
