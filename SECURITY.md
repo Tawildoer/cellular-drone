@@ -18,7 +18,7 @@ The design assumes the link, the browser and the server can all fail or be attac
 
 ## Status: what isn't built yet
 
-This is a work in progress (see [the status page](docs/status.md)). **Authentication is built** (Phase 1c, ADR-0030) but hasn't faced a deployment yet: it runs locally and in the SITL tests, not yet behind Caddy on a VPS.
+This is a work in progress (see [the status page](docs/status.md)). **Authentication is built** (Phase 1c, ADR-0030) and deployed at `fly.tomwildoer.com` behind Caddy, but young: review it before anything flies for real.
 
 | Piece | Today | Planned (Phase 1c / 5) |
 | --- | --- | --- |

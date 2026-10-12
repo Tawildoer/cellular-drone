@@ -1,6 +1,6 @@
 # Status
 
-*Last updated 2026-10-11.* The table below is counted from [the plan](PLAN.md)'s checkboxes every time the site builds, so it's always current. The rest of the page is a written summary: update it with the [progress log](progress-log.md).
+*Last updated 2026-10-12.* The table below is counted from [the plan](PLAN.md)'s checkboxes every time the site builds, so it's always current. The rest of the page is a written summary: update it with the [progress log](progress-log.md).
 
 ## Progress by phase
 
@@ -32,7 +32,7 @@ The software is ahead of the hardware, as planned. **Phase 1 runs end to end aga
 
 <span class="chip done">done</span> **ArduPlane SITL** (Plane 4.7.1 QuadPlane) in Docker, with the project's failsafe params and two FC Lua scripts: clock-mode loiters (`loiter_until.lua`) and pauses that can't strand the aircraft and rejoin the planned leg (`pause_resume.lua`).
 
-<span class="chip done">done</span> **Server authentication** (ADR-0030, not yet deployed): argon2id logins with session cookies, missions stored on the server, drones proving their own Ed25519 key on connect, and session tokens the server signs and the agent checks before answering a browser; finished flight logs uploaded to the server. The SITL tests run with real keys.
+<span class="chip done">done</span> **Server authentication** (ADR-0030, live at `fly.tomwildoer.com`): argon2id logins with session cookies, missions stored on the server, drones proving their own Ed25519 key on connect, and session tokens the server signs and the agent checks before answering a browser; finished flight logs uploaded to the server. The SITL tests run with real keys.
 
 <span class="chip done">done</span> **Go agent against SITL**: MAVLink2 link, mode mapping, command whitelist, mission and fence upload with readback, RC override from the mode switch itself, start only with the switch at AUTO, and a fsynced flight log of every command, upload, FC event and state sample.
 
@@ -43,8 +43,8 @@ The software is ahead of the hardware, as planned. **Phase 1 runs end to end aga
 <span class="chip next">next</span> **Finish 1b**
 :   Tune the mock to SITL (25 m/s cruise, waypoint-reached and RTL-altitude behaviour). More SITL scenarios: browser closed mid-mission, agent killed mid-flight, mission changed from another ground station. The slow check that a pilot's LOITER isn't time-limited (ADR-0020). Video test pattern in SITL mode. Go protocol types held to the zod schemas by tests.
 
-<span class="chip next">next</span> **Phase 1c: the real server** (ADR-0030; logins, missions, drone keys, signed session tokens, flight-log upload and the deployment bundle done)
-:   Still to do: choose a VPS and bring `deploy/` up on it. That unlocks the Phase 1 exit test: a phone on mobile data, through the VPS, flying SITL.
+<span class="chip next">next</span> **Phase 1c: the real server** (ADR-0030; done, and live at `https://fly.tomwildoer.com`)
+:   A phone on mobile data has flown SITL through it, direct over IPv6. Still to do for the Phase 1 exit: the same from a laptop browser, the relayed (TURN) path if ADR-0015 needs it, and an agent restart mid-session (the console must reconnect cleanly). That unlocks the Phase 1 exit test: a phone on mobile data, through the VPS, flying SITL.
 
 <span class="chip next">next</span> **1a loose ends**
 :   A deliberate Chrome laptop check. (Done: the fault-injection panel, the menu's Simulator section, and the Playwright smoke test against the mock, `npm run e2e`.) Phone layout stays deferred.
@@ -63,4 +63,4 @@ The software is ahead of the hardware, as planned. **Phase 1 runs end to end aga
 - **Gimbal lock, free fly and the battery return run in the mock only**: the agent rejects their commands, and the battery-return Lua script is still to write and prove in SITL.
 - **Follow terrain is done by the planner**, between waypoints only; ArduPlane's own terrain following (which also covers RTL) is a later ADR.
 - **The mock still flies differently from ArduPlane** in places (cruise speed, waypoint radius, RTL altitude): listed in [the MAVLink mapping](MAVLINK.md#mock-vs-arduplane).
-- **Authentication isn't deployed yet** (Phase 1c): logins, drone keys and signed session tokens work locally and in the SITL tests; `deploy/` runs locally in Docker but hasn't run on a VPS yet. The vehicle list is still fixed in the web app rather than read from the server's registry, and an expired session doesn't send the console back to the login screen. See `SECURITY.md` in the repository root.
+- **The server is new in production** (Phase 1c): it runs at `fly.tomwildoer.com` on an Oracle Cloud free VM, with no backups or IPv6 on it yet. The vehicle list is still fixed in the web app rather than read from the server's registry, and an expired session doesn't send the console back to the login screen. See `SECURITY.md` in the repository root.

@@ -57,6 +57,7 @@ Do this before new planner features (ADR-0017). Mapping reference: `docs/MAVLINK
   - [ ] Fly the same missions in MockLink and SITL; tune the mock to SITL (waypoint reached, RTL altitude, turn radius, cruise speed: SITL cruises at 25 m/s, see docs/MAVLINK.md)
   - [x] Fly a mission from the browser through WebRtcLink → agent → SITL: `web/e2e-sitl` (`npm run e2e:sitl`), flight, RC takeover by the mode switch, and start needing the switch at AUTO. (2026-10-08: all three pass, 5.6 min)
   - [ ] More SITL scenarios: browser closed mid-mission, agent killed mid-flight, mission changed from another ground station
+  - [ ] `WebRtcLink`: when the agent restarts, start a fresh peer connection instead of an ICE restart. Seen 2026-10-12: ICE reconnected to the new agent process but the data channels didn't, so commands failed with `not_connected` until the operator reconnected
   - [x] Data channels: `telemetry` (unreliable) and `control` (reliable), carrying the **same `protocol/` v1 messages** as MockLink (flown end to end by `web/e2e-sitl`, 2026-10-08)
   - [x] Command whitelist and safety gate. Mission upload, download and verify state machine. (Flown end to end in SITL by `cmd/sitlcheck`; not yet from a browser)
   - [x] GCS heartbeat only while a commander session is alive. Informational since ADR-0020 (`FS_GCS_ENABL 0`): no failsafe depends on it. (Any session with an open control channel counts; one-commander rule still to do)
@@ -77,9 +78,9 @@ Do this before new planner features (ADR-0017). Mapping reference: `docs/MAVLINK
   - [x] Signalling WebSocket relay between the browser and the drone; operators need a session cookie (2026-10-11; drones authenticate in the next step)
   - [x] Missions CRUD, validated against the protocol's `missionSchema` (2026-10-11)
   - [x] Flight-log upload endpoint, signed with the drone key; users list and download them (2026-10-11)
-  - [~] `docker-compose.yml`: server, Caddy, coturn (with time-limited TURN credentials). `deploy/`: server image and Caddy, run locally with `DOMAIN=localhost` (login, missions, signalling, Origin checks through Caddy, 2026-10-11), not yet on a VPS; coturn on hold (ADR-0015)
+  - [x] `docker-compose.yml`: server and Caddy (`deploy/`), live at `https://fly.tomwildoer.com` on an Oracle Cloud free VM in Melbourne (2026-10-12). coturn on hold (ADR-0015)
 - [x] `web/`: `WebRtcLink`, `HttpAuthClient`, `HttpMissionRepository`. All pass the same contract tests. Switch with `VITE_VEHICLE_LINK=webrtc` (`VITE_BACKEND` picks the server or local storage; 2026-10-11)
-- [ ] Test end to end in SITL: log in from a phone on mobile data → plan → upload → arm → fly → pause/resume → RTL → land.
+- [~] Test end to end in SITL: log in from a phone on mobile data → plan → upload → arm → fly → pause/resume → RTL → land. (2026-10-12: through `fly.tomwildoer.com`, the phone on mobile data reached the agent and SITL on the Mac directly over IPv6 and flew the mission; still to do from a laptop browser too.)
 - [ ] Test forced-TURN mode (`iceTransportPolicy: "relay"`), and kill the agent mid-flight to check the SITL failsafe.
 
 **Exit:** a full autonomous VTOL mission in SITL, run from a phone browser and a laptop browser, through the deployed VPS, with both direct and relayed paths tested. **No UI feature code changed when switching from MockLink to WebRtcLink.**

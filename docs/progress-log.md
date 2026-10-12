@@ -2,6 +2,13 @@
 
 What each working session delivered, newest first. Commit hashes link to the change on GitHub. Add an entry when work lands; tick the matching boxes in [the plan](PLAN.md) in the same change.
 
+## 2026-10-12: live at fly.tomwildoer.com; flown from a phone on mobile data
+
+- **The server is deployed** (`deploy/`, ADR-0030) on an Oracle Cloud free VM in Melbourne, at **https://fly.tomwildoer.com**: Caddy with a Let's Encrypt certificate in front of the server, a firewall open only for SSH and the web, automatic security updates.
+- **First flight through it**: ArduPlane SITL and the agent on a Mac at home, registered as Drone 1 with its own key; the operator signed in from their phone **on mobile data** and armed and started the mission. WebRTC went **direct over IPv6**, phone network to home broadband, not relayed, and the agent checked the server's signed token before answering (recorded in DECISIONS.md, link test results).
+- Found on the way: when the agent restarts during a session, the console resumes the old connection, which has no data channels on the new agent's side; commands fail until the operator reconnects. Added to the plan.
+- The flight controller choice is settled (ADR-0002): the F405 Wing V2 for the bench and RC tuning, an H743 before missions are flown from the browser.
+
 ## 2026-10-11: fixes from the SITL runs
 
 - **Connecting no longer overwrites the drone's mission**: with missions shared on the server, any browser connecting to a drone on the ground uploaded the fleet's newest mission over whatever it held (the SITL viewer test caught it). The console now uploads on connect only to a drone that is disarmed, reported on the ground, and holds no mission. (In the air the agent always refused mission changes.) Waiting for "on the ground" also fixes a flaky start: a flight controller just booted reports its landed state as unknown for a moment, the agent refused the upload as "in flight", and the one-off upload never retried, leaving nothing to arm with.

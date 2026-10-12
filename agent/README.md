@@ -19,8 +19,8 @@ go test ./...
 ```
 
 The binary is static and pure Go: video comes from an encoder subprocess
-(`-video-cmd`) writing Annex-B H.264 to stdout, so no cgo or GStreamer
-headers are needed to build it.
+(`-video-cmd`) sending H.264 RTP (1200-byte packets) to `127.0.0.1:{port}`,
+so no cgo or GStreamer headers are needed to build it.
 
 ## Keys (ADR-0030)
 
@@ -51,7 +51,7 @@ registered), then:
 ```bash
 cd server && npm start                         # API and signalling on :8788
 cd agent && ./bin/agent -server-pubkey <server key> \
-  -video-cmd "ffmpeg -loglevel error -re -f lavfi -i testsrc=size=1280x720:rate=30 -pix_fmt yuv420p -c:v libx264 -profile:v baseline -tune zerolatency -preset ultrafast -b:v 1500k -g 30 -f h264 -"
+  -video-cmd "ffmpeg -loglevel error -re -f lavfi -i testsrc=size=1280x720:rate=30 -pix_fmt yuv420p -c:v libx264 -profile:v baseline -tune zerolatency -preset ultrafast -b:v 1500k -g 30 -f rtp -pkt_size 1200 rtp://127.0.0.1:{port}"
 cd web && VITE_VEHICLE_LINK=webrtc npm run dev  # then sign in and pick Drone 1
 ```
 
