@@ -7,7 +7,9 @@
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff
 		X-Frame-Options DENY
-		Referrer-Policy no-referrer
+		# The origin only, never the path: OpenStreetMap's tile policy needs to
+		# know which site the map tiles are for, and blocks requests without it.
+		Referrer-Policy strict-origin-when-cross-origin
 		-Server
 	}
 
