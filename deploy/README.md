@@ -39,7 +39,11 @@ docker compose exec server npm run cli -- user:add <name>      # asks for the pa
 docker compose exec server npm run cli -- user:list
 docker compose exec server npm run cli -- drone:list
 git pull && (cd ../web && npm run build:server) && docker compose up -d --build   # update
+docker compose restart caddy                                                     # after a Caddyfile change
 ```
+
+The Caddyfile is mounted as a single file, and `git pull` replaces it with a
+new one, so `caddy reload` keeps the old copy: restart the container instead.
 
 Back up the `server-data` volume (database, signing key, flight logs):
 
